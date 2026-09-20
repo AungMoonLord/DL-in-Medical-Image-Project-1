@@ -1,0 +1,181 @@
+# ==============================================================
+# BASE CONFIG — ค่ากลางที่ทุก experiment สืบทอด
+# ไฟล์ config อื่นใช้ `inherit: base.yaml` แล้ว override เฉพาะที่ต่าง
+# ==============================================================
+
+project:
+  name: thai-char-cnn
+  num_classes: 72
+  seed: 42
+  deterministic: true          # ปิดเพื่อความเร็ว +10-15% ถ้าไม่ต้อง reproduce
+
+# --------------------------------------------------------------
+paths:
+  raw_dir:        data/raw
+  aug_dir:        data/augmented
+  splits_dir:     data/splits
+  train_csv:      data/splits/train.csv
+  val_csv:        data/splits/val.csv
+  class_map:      data/splits/class_map.json
+  ckpt_dir:       outputs/checkpoints
+  log_dir:        outputs/logs
+  figure_dir:     outputs/figures
+
+# --------------------------------------------------------------
+data:
+  image_size: 224              # pad-to-square ก่อน resize เสมอ
+  in_channels: 3               # grayscale จะถูก replicate เป็น 3 ch ให้ pretrained ใช้ได้
+  pad_color: 255               # พื้นหลังขาว; ใช้ 0 ถ้า dataset เป็นตัวอักษรขาวบนดำ
+  auto_invert: true            # ตรวจ polarity อัตโนมัติให้เป็น "ตัวอักษรดำบนพื้นขาว"
+  normalize:
+    mean: [0.485, 0.456, 0.406]   # ImageNet stats (จำเป็นสำหรับ transfer learning)
+    std:  [0.229, 0.224, 0.225]
+
+# --------------------------------------------------------------
+split:
+  ratio: 0.8                   # train : val = 80 : 20
+  stratify: true
+  min_val_per_class: 1         # ทุกคลาสต้องมีอย่างน้อย 1 ภาพใน val
+  singleton_policy: val_first  # คลาส 1 ภาพ → ภาพจริงไป val, augmented ไป train
+  enforce_no_leakage: true     # assert origin_id ไม่ซ้ำข้าม split
+
+# --------------------------------------------------------------
+augmentation:
+  # ---- online (ทุก batch ตอนเทรน) ----
+  online:
+    rotate_limit: 10           # องศา — ห้ามเกิน 15
+    scale_limit: 0.15
+    shear_limit: 8
+    translate_percent: 0.06
+    elastic:
+      enabled: true
+      alpha: 30
+      sigma: 6
+      p: 0.4
+    grid_distortion:
+      enabled: true
+      distort_limit: 0.2
+      p: 0.3
+    brightness_contrast: 0.2
+    morphology:                # จำลองความหนาปากกา
+      enabled: true
+      p: 0.3
+      max_kernel: 3
+    coarse_dropout:
+      enabled: true
+      p: 0.2
+      max_holes: 4
+      max_size: 12
+  # ---- offline (เฉพาะ tail class) ----
+  offline:
+    tail_threshold: 50         # คลาสที่น้อยกว่านี้จะถูก augment
+    target_count: 200          # ยกให้ถึงจำนวนนี้
+    strength: strong           # ใช้ augmentation หนักกว่า online
+  # ---- ข้อห้ามเด็ดขาด (hard-coded guard ใน transforms.py) ----
+  forbidden:
+    horizontal_flip: false
+    vertical_flip: false
+    rotate_90: false
+    color_invert: false
+
+# --------------------------------------------------------------
+model:
+  backbone: tf_efficientnet_b0.ns_jft_in1k
+  pretrained: true
+  head: linear                 # linear | arcface
+  embedding_dim: 512
+  dropout: 0.3
+  drop_path: 0.1
+
+# --------------------------------------------------------------
+loss:
+  type: logit_adjusted         # ce | focal | logit_adjusted
+  label_smoothing: 0.1
+  tau: 1.0                     # ความแรงของ logit adjustment
+  focal_gamma: 2.0             # ใช้เมื่อ type: focal
+  mixup:
+    enabled: false
+    alpha: 0.2
+    tail_aware: true           # mix เฉพาะคู่ที่มี tail class
+
+# --------------------------------------------------------------
+# Two-Stage Decoupled Training (Kang et al., ICLR 2020)
+train:
+  stage1:
+    enabled: true
+    epochs: 30
+    batch_size: 64
+    sampler: instance          # สุ่มตามธรรมชาติ — backbone เรียนฟีเจอร์สะอาด
+    freeze_backbone: false
+    optimizer: adamw
+    lr: 3.0e-4
+    backbone_lr_mult: 0.1      # backbone เรียนช้ากว่า head 10 เท่า
+    weight_decay: 0.01
+    scheduler: cosine
+    warmup_epochs: 3
+    min_lr: 1.0e-6
+  stage2:
+    enabled: true
+    epochs: 15
+    batch_size: 64
+    sampler: sqrt              # w_c ∝ n_c^-0.5
+    freeze_backbone: true      # เทรนเฉพาะ classifier
+    optimizer: adamw
+    lr: 1.0e-3
+    weight_decay: 1.0e-4
+    scheduler: cosine
+    warmup_epochs: 1
+    min_lr: 1.0e-6
+
+# --------------------------------------------------------------
+hardware:
+  device: cuda
+  amp: true                    # Mixed precision
+  amp_dtype: bfloat16          # Blackwell รองรับ bf16 native — เสถียรกว่า fp16
+  channels_last: true          # +5-10% บน tensor core
+  compile: false               # torch.compile — เปิดได้ถ้า PyTorch 2.7+ เสถียรแล้ว
+  num_workers: 8               # i5-12400F มี 12 threads → 8 กำลังดี
+  pin_memory: true
+  persistent_workers: true
+  prefetch_factor: 4
+  cudnn_benchmark: true
+  grad_accum_steps: 1
+  max_grad_norm: 5.0
+
+# --------------------------------------------------------------
+eval:
+  primary_metric: macro_f1     # ตัวตัดสินการ save best — ไม่ใช่ accuracy
+  monitor_mode: max
+  early_stopping:
+    enabled: true
+    patience: 12
+    min_delta: 0.001
+  tta:
+    enabled: true
+    n_views: 5
+  report:
+    per_class_recall: true
+    confusion_matrix: true
+    confusion_top_k: 25        # โชว์เฉพาะคู่ที่สับสนมากที่สุด
+    gradcam_samples: 12
+    confusion_groups:          # กลุ่มที่ต้องวิเคราะห์เจาะจงในสไลด์
+      - ["ข", "ฃ"]
+      - ["ท", "ฑ"]
+      - ["พ", "ผ", "ฝ", "ฟ", "ฬ"]
+      - ["ก", "ภ", "ถ", "ฤ"]
+      - ["ด", "ต", "ค"]
+      - ["ิ", "ี", "ึ", "ื"]
+      - ["่", "้", "๊"]
+      - ["ช", "ซ"]
+      - ["า", "ว", "ๅ"]
+      - ["็", "๘"]
+      - ["๔", "๕"]
+
+# --------------------------------------------------------------
+logging:
+  level: INFO
+  tensorboard: true
+  save_history_csv: true
+  log_interval: 20             # log ทุกกี่ step
+  save_last: true
+  save_best: true
