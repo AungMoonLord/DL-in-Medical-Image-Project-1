@@ -218,7 +218,8 @@ def main() -> None:
 
     if use_tta:
         result, raw = validate_tta(
-            model, val_ds, build_tta_transforms(cfg, n_views), device,
+            # แก้ไขบรรทัดที่ 221 โดยระบุ path ของ cfg โดยตรง
+            model, val_ds, build_tta_transforms(cfg, cfg.eval.tta.n_views), device,
             batch_size=128, num_workers=nw, num_classes=n_cls,
             class_counts=raw_counts, class_names=names,  # <-- ส่ง raw_counts
             amp=amp, amp_dtype=amp_dtype)
