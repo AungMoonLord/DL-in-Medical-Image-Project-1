@@ -42,16 +42,17 @@ def augment_class(sources: list[str], n_needed: int, out_dir: Path,
                   seed: int = 42) -> list[dict]:
     """สร้างภาพ augmented ให้ครบ n_needed โดยวนใช้ source แบบ round-robin."""
     out_dir.mkdir(parents=True, exist_ok=True)
-    #rng = np.random.default_rng(seed + folder_id)
     rows = []
 
     cache = {}
+    i = 0  # <--- [แก้ไข 1] ประกาศตัวแปรนับรอบเริ่มต้นที่ 0
     while len(rows) < n_needed:
         src = sources[i % len(sources)]
         if src not in cache:
             try:
                 cache[src] = read_image(src)
             except Exception:
+                i += 1  # ข้ามไปรูปถัดไปหากอ่านรูปไม่ได้
                 continue
         img = cache[src]
 
@@ -64,6 +65,7 @@ def augment_class(sources: list[str], n_needed: int, out_dir: Path,
         dst = out_dir / fname
         ok, buf = cv2.imencode(".png", cv2.cvtColor(aug, cv2.COLOR_RGB2BGR))
         if not ok:
+            i += 1  # ข้ามหากบันทึกภาพไม่สำเร็จ
             continue
         buf.tofile(str(dst))    # รองรับ path ยูนิโค้ด
 
@@ -75,8 +77,8 @@ def augment_class(sources: list[str], n_needed: int, out_dir: Path,
             "is_augmented": 1,
             "origin_id": f"{folder_id}_{Path(src).stem}",
         })
+        i += 1  # <--- [แก้ไข 2] บวกค่า i เพิ่ม 1 ทุกครั้งที่สร้างภาพสำเร็จเพื่อวนใช้รูปถัดไป
     return rows
-
 
 def main() -> None:
     ap = argparse.ArgumentParser(description="Offline augmentation สำหรับ tail class")
