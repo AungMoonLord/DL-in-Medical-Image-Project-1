@@ -251,7 +251,7 @@ python -c "import torch; print('PyTorch:', torch.__version__, '| CUDA:', torch.c
 
 สำหรับการทดสอบโดยไม่ต้องฝึกสอนใหม่:
 
-- **Google Drive:** [best_model.pth](https://drive.google.com/drive/folders/1DpkZT8NjZdAoDMl7vtTV-ocmNaTPAIfs?usp=sharing) *(แทนที่ด้วยลิงก์จริง)*
+- **Google Drive:** [best_model.pth](https://drive.google.com/drive/folders/1e17n45i1vQ1i-v6_wI12p-SAMPLE-LINK?usp=sharing) *(แทนที่ด้วยลิงก์จริง)*
 - **วางไฟล์ที่:** `outputs/checkpoints/best_model.pth`
 
 ---
@@ -404,6 +404,86 @@ python -m src.inference \
 5. **Font Auto-Download** — `LeelawUI.ttf` จะถูกดาวน์โหลดอัตโนมัติลง `data/fonts/` ไดเรกทอรีนี้ถูกกั้นไว้ใน `.gitignore` แล้ว เพื่อความปลอดภัยทางลิขสิทธิ์
 
 
+# 🔍 How to Inference — คู่มือการใช้งาน
+
+> สคริปต์สำหรับรันการทำนายภาพตัวอักษรไทย รองรับทั้งภาพเดี่ยว โฟลเดอร์ และโฟลเดอร์ซ้อนโฟลเดอร์
+
+---
+
+## ⚡ Quick Start Commands
+
+### 1.1 รันทำนายด่วน
+> เหมาะสำหรับ **ภาพจำนวนน้อย** หรือ **ทดสอบเร็ว**
+
+ปิด TTA และตั้งค่า Multi-worker เป็น 0 เพื่อข้าม Overhead ในการสร้าง Process — ได้ผลลัพธ์ทันทีภายในไม่กี่วินาที
+
+```powershell
+py -m src.inference --ckpt outputs/checkpoints/best_model.pth --input test_image --num-workers 0
+```
+
+---
+
+### 1.2 รันทำนายความแม่นยำสูงสุด
+> เหมาะสำหรับ **ประเมินชุดข้อมูลจริง** หรือ **ส่งอาจารย์**
+
+เปิดใช้งาน Test-Time Augmentation (TTA) 5 รูปแบบ เพื่อเพิ่มความเสถียรและแม่นยำของคำตอบ
+
+```powershell
+py -m src.inference --ckpt outputs/checkpoints/best_model.pth --input test_image --tta 5
+```
+
+---
+
+### 1.3 รันทำนายและระบุชื่อไฟล์บันทึกผลลัพธ์ (Custom Output Path)
+> กำหนดชื่อและโฟลเดอร์สำหรับเซฟไฟล์ตารางสรุปผลลัพธ์ CSV ตามต้องการ
+
+```powershell
+py -m src.inference --ckpt outputs/checkpoints/best_model.pth --input test_image --output outputs/final_evaluation.csv
+```
+
+---
+
+## 🛠️ Flag / Parameter ทั้งหมด
+
+| Parameter | ค่า Default | คำอธิบายและข้อแนะนำ |
+|---|---|---|
+| `--input` | *(จำเป็นต้องระบุ)* | พาธของไฟล์ภาพเดี่ยว โฟลเดอร์ภาพ หรือโฟลเดอร์ซ้อนโฟลเดอร์ |
+| `--ckpt` | `outputs/checkpoints/best_model.pth` | พาธไปยังไฟล์ Checkpoint น้ำหนักโมเดล (`.pth`) |
+| `--output` | `outputs/predictions.csv` | พาธไฟล์ปลายทางสำหรับบันทึกผลลัพธ์ตาราง CSV |
+| `--tta` | `1` | จำนวนรูปแบบภาพเสริมใน Test-Time Augmentation<br>• `1` = รันปกติ<br>• `5` = สุ่มดัดแปลงภาพ 5 แบบเพื่อเฉลี่ยผล |
+| `--num-workers` | `8` | จำนวน Thread ดึงภาพ<br>• ภาพน้อยกว่า 20 ภาพ → แนะนำตั้งเป็น `0`<br>• ภาพหลักพัน → เปิดไว้ที่ `4` หรือ `8` |
+| `--batch-size` | `128` | จำนวนภาพที่ประมวลผลพร้อมกันในแต่ละรอบ |
+| `--top-k` | `3` | จำนวนอันดับความน่าจะเป็นสูงสุดที่ต้องการบันทึกลงไฟล์ CSV (Top-1, Top-2, Top-3) |
+| `--device` | `cuda` | อุปกรณ์ประมวลผล<br>• `cuda` = GPU<br>• `cpu` = หากต้องการใช้ CPU |
+
+---
+
+## 📄 โครงสร้างข้อมูลในไฟล์ผลลัพธ์ (`predictions.csv`)
+
+เมื่อรันคำสั่งเสร็จสิ้น สคริปต์จะสร้างไฟล์ CSV ที่มีคอลัมน์สำคัญดังนี้:
+
+| คอลัมน์ | คำอธิบาย |
+|---|---|
+| `filepath` | พาธเต็มของไฟล์ภาพ |
+| `pred_class` | ตัวอักษรไทยที่โมเดลทำนายได้ (อันดับ 1) |
+| `confidence` | ค่าความมั่นใจของคำตอบอันดับ 1 (ช่วง 0.0 – 1.0) |
+| `top1_class` / `top1_prob` | คลาสและค่าความน่าจะเป็นอันดับที่ 1 |
+| `top2_class` / `top2_prob` | คลาสและค่าความน่าจะเป็นอันดับที่ 2 |
+| `top3_class` / `top3_prob` | คลาสและค่าความน่าจะเป็นอันดับที่ 3 |
+| `true_class` / `correct` | *(มีเฉพาะกรณีที่จัดโฟลเดอร์ต้นทางเป็นหมวดหมู่)* ระบุตัวอักษรจริงและสถานะว่าทำนายถูกหรือไม่ (`True` / `False`) |
+
+---
+
+## 💡 Tips สรุปการเลือกใช้
+
+| สถานการณ์ | คำสั่งที่แนะนำ |
+|---|---|
+| ทดสอบเร็ว / ภาพน้อย | `--num-workers 0` |
+| ความแม่นยำสูงสุด | `--tta 5` |
+| ส่งงานอาจารย์ / ประเมินจริง | `--tta 5 --output outputs/final_evaluation.csv` |
+| ใช้ CPU แทน GPU | `--device cpu` |
+
+
 ## 👤 Contributors
 
 **นายอองรักษ์ วณิชชานัย 67070297**  
@@ -413,3 +493,5 @@ python -m src.inference \
 <p align="center">
   <sub>Thai Character Recognition · 72-Class CNN · Ada-ArcFace · Two-Stage Decoupled Training</sub>
 </p>
+
+
