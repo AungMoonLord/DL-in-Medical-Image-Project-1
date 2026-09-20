@@ -251,7 +251,7 @@ python -c "import torch; print('PyTorch:', torch.__version__, '| CUDA:', torch.c
 
 สำหรับการทดสอบโดยไม่ต้องฝึกสอนใหม่:
 
-- **Google Drive:** [best_model.pth](https://drive.google.com/drive/folders/1e17n45i1vQ1i-v6_wI12p-SAMPLE-LINK?usp=sharing) *(แทนที่ด้วยลิงก์จริง)*
+- **Google Drive:** [best_model.pth](https://drive.google.com/drive/folders/1DpkZT8NjZdAoDMl7vtTV-ocmNaTPAIfs?usp=sharing) *(แทนที่ด้วยลิงก์จริง)*
 - **วางไฟล์ที่:** `outputs/checkpoints/best_model.pth`
 
 ---
