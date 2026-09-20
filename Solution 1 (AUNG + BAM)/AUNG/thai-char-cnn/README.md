@@ -1,4 +1,4 @@
-# 🇹🇭 Thai Character Recognition
+# Thai Character Recognition
 ### 72-Class CNN with Transfer Learning & Ada-ArcFace
 
 > ระบบรู้จำและจำแนกตัวอักษรไทย — พยัญชนะ สระ วรรณยุกต์ และตัวเลขไทย รวม **72 คลาส**  
