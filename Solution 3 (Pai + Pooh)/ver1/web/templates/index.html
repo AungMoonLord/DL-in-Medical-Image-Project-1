@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Thai Character Classifier | Deep Learning AI</title>
+    <meta name="description" content="Real-time Thai Character Classification using Custom CNN and Transfer Learning backbones with zero-leakage deterministic training.">
+    <!-- Google Fonts: Inter, Outfit, and Sarabun for authentic Thai typography -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;600;700;800&family=Sarabun:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <!-- FontAwesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    <div class="app-background">
+        <div class="gradient-sphere sphere-1"></div>
+        <div class="gradient-sphere sphere-2"></div>
+        <div class="grid-overlay"></div>
+    </div>
+
+    <div class="container">
+        <!-- Header -->
+        <header class="app-header">
+            <div class="header-brand">
+                <div class="logo-icon">
+                    <span class="thai-symbol">ก</span>
+                </div>
+                <div>
+                    <h1 class="app-title">Thai Character <span class="gradient-text">Classifier</span></h1>
+                    <p class="app-subtitle">72-Class Deep Learning Architecture • Solution 3 (Pai + Pooh)</p>
+                </div>
+            </div>
+            <div class="header-status">
+                <div class="device-badge" id="deviceBadge">
+                    <span class="pulse-dot"></span>
+                    <i class="fa-solid fa-microchip"></i>
+                    <span id="deviceText">Loading Device...</span>
+                </div>
+            </div>
+        </header>
+
+        <!-- Main Workspace Grid -->
+        <main class="workspace-grid">
+            <!-- Left Panel: Input Modes & Model Selector -->
+            <section class="panel input-panel">
+                <div class="panel-header">
+                    <h2 class="panel-title"><i class="fa-solid fa-pen-nib"></i> Character Input</h2>
+                    <!-- Input Mode Tabs -->
+                    <div class="tab-pills" role="tablist">
+                        <button class="tab-btn active" data-tab="draw" id="tabDrawBtn">
+                            <i class="fa-solid fa-paintbrush"></i> Draw
+                        </button>
+                        <button class="tab-btn" data-tab="upload" id="tabUploadBtn">
+                            <i class="fa-solid fa-cloud-arrow-up"></i> Upload
+                        </button>
+                        <button class="tab-btn" data-tab="samples" id="tabSamplesBtn">
+                            <i class="fa-solid fa-dice"></i> Samples
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Model Selector Toolbar -->
+                <div class="model-selector-group">
+                    <label for="modelSelect" class="input-label">
+                        <i class="fa-solid fa-brain"></i> Active Neural Backbone:
+                    </label>
+                    <div class="model-cards-grid" id="modelCardsContainer">
+                        <!-- Populated dynamically via JS -->
+                        <div class="model-card active" data-model="custom_cnn">
+                            <div class="model-card-header">
+                                <span class="model-name">Custom GlyphCNN</span>
+                                <span class="badge badge-primary">Baseline</span>
+                            </div>
+                            <p class="model-desc">4-Stage Conv-BN-Mish-SE (Native 32×32)</p>
+                        </div>
+                        <div class="model-card" data-model="resnet18">
+                            <div class="model-card-header">
+                                <span class="model-name">Adapted ResNet-18</span>
+                                <span class="badge badge-success">Transfer</span>
+                            </div>
+                            <p class="model-desc">Stem-Adapted ImageNet Weights</p>
+                        </div>
+                        <div class="model-card" data-model="mobilenet_v3">
+                            <div class="model-card-header">
+                                <span class="model-name">Adapted MobileNetV3</span>
+                                <span class="badge badge-info">Lightweight</span>
+                            </div>
+                            <p class="model-desc">Inverted Residuals with SE Attention</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Tab 1: Drawing Pad -->
+                <div class="tab-content active" id="tabDraw">
+                    <div class="canvas-wrapper">
+                        <canvas id="drawingCanvas" width="380" height="380"></canvas>
+                        <div class="canvas-placeholder" id="canvasPlaceholder">
+                            <i class="fa-solid fa-signature"></i>
+                            <p>Draw any Thai character here</p>
+                            <span>(e.g., ก, ข, ค, ด, ต, า, ๑, ๒, ้)</span>
+                        </div>
+                    </div>
+
+                    <!-- Canvas Controls -->
+                    <div class="canvas-controls">
+                        <div class="control-group">
+                            <label for="brushSize" class="control-label">Stroke Width:</label>
+                            <input type="range" id="brushSize" min="8" max="40" value="22" class="slider">
+                            <span id="brushSizeVal" class="slider-val">22px</span>
+                        </div>
+                        <div class="control-buttons">
+                            <button id="clearBtn" class="btn btn-secondary" title="Clear canvas">
+                                <i class="fa-solid fa-trash-can"></i> Clear
+                            </button>
+                            <button id="undoBtn" class="btn btn-secondary" title="Undo stroke">
+                                <i class="fa-solid fa-rotate-left"></i> Undo
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Tab 2: Upload File -->
+                <div class="tab-content" id="tabUpload">
+                    <div class="upload-dropzone" id="dropzone">
+                        <input type="file" id="fileInput" accept="image/*" class="file-input-hidden">
+                        <div class="dropzone-content" id="dropzoneContent">
+                            <i class="fa-solid fa-cloud-arrow-up drop-icon"></i>
+                            <h3>Drag & Drop Character Image</h3>
+                            <p>or click to browse from your computer (.jpg, .png, .bmp)</p>
+                        </div>
+                        <div class="image-preview-container hidden" id="previewContainer">
+                            <img id="uploadPreviewImg" alt="Upload Preview" src="">
+                            <button id="removeUploadBtn" class="btn-remove" title="Remove image">
+                                <i class="fa-solid fa-xmark"></i>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Tab 3: Dataset Random Samples -->
+                <div class="tab-content" id="tabSamples">
+                    <div class="samples-header">
+                        <p>Click any real test dataset sample to run instant prediction:</p>
+                        <button id="refreshSamplesBtn" class="btn btn-sm btn-secondary">
+                            <i class="fa-solid fa-arrows-rotate"></i> Refresh Samples
+                        </button>
+                    </div>
+                    <div class="samples-grid" id="samplesGrid">
+                        <!-- Populated dynamically via JS -->
+                        <div class="sample-skeleton"></div>
+                        <div class="sample-skeleton"></div>
+                        <div class="sample-skeleton"></div>
+                    </div>
+                </div>
+
+                <!-- Action Button -->
+                <div class="action-footer">
+                    <button id="predictBtn" class="btn btn-primary btn-glow btn-block">
+                        <i class="fa-solid fa-wand-magic-sparkles"></i> Classify Character
+                    </button>
+                </div>
+            </section>
+
+            <!-- Right Panel: Real-Time Results & Inspection -->
+            <section class="panel results-panel">
+                <div class="panel-header">
+                    <h2 class="panel-title"><i class="fa-solid fa-chart-simple"></i> Classification Results</h2>
+                    <div class="latency-tag hidden" id="latencyTag">
+                        <i class="fa-solid fa-bolt"></i> <span id="latencyVal">0.0</span> ms
+                    </div>
+                </div>
+
+                <!-- Idle State Placeholder -->
+                <div class="results-empty" id="resultsEmpty">
+                    <div class="empty-icon">
+                        <i class="fa-solid fa-language"></i>
+                    </div>
+                    <h3>Ready for Prediction</h3>
+                    <p>Draw a character or upload an image on the left, then click <strong>Classify Character</strong>.</p>
+                </div>
+
+                <!-- Loading State -->
+                <div class="results-loading hidden" id="resultsLoading">
+                    <div class="spinner"></div>
+                    <p>Processing glyph & executing neural inference...</p>
+                </div>
+
+                <!-- Populated Result Content -->
+                <div class="results-content hidden" id="resultsContent">
+                    <!-- Top-1 Hero Card -->
+                    <div class="hero-result-card">
+                        <div class="hero-glyph-wrapper">
+                            <span class="hero-glyph" id="heroGlyph">ก</span>
+                            <span class="hero-score" id="heroScore">99.8%</span>
+                        </div>
+                        <div class="hero-details">
+                            <div class="hero-names">
+                                <h3 class="hero-thai-name" id="heroThaiName">ก ไก่</h3>
+                                <span class="hero-en-name" id="heroEnName">Ko Kai</span>
+                            </div>
+                            <div class="hero-badges">
+                                <span class="badge badge-type" id="heroTypeBadge">Consonant (Middle)</span>
+                                <span class="badge badge-code" id="heroCodeBadge">TIS-620: 161 (0xA1)</span>
+                            </div>
+                            <p class="hero-meaning" id="heroMeaning">Meaning: Chicken / Poultry</p>
+                        </div>
+                    </div>
+
+                    <!-- Top 5 Candidates Breakdown -->
+                    <div class="section-block">
+                        <h4 class="section-title"><i class="fa-solid fa-ranking-star"></i> Top 5 Candidates</h4>
+                        <div class="predictions-list" id="predictionsList">
+                            <!-- Populated dynamically via JS -->
+                        </div>
+                    </div>
+
+                    <!-- Tensor & Letterbox Inspector -->
+                    <div class="section-block inspector-block">
+                        <h4 class="section-title"><i class="fa-solid fa-magnifying-glass"></i> CNN Tensor Inspector (32×32 Letterbox)</h4>
+                        <div class="inspector-card">
+                            <div class="inspector-item">
+                                <div class="tensor-preview-box">
+                                    <img id="tensorPreviewImg" alt="Letterbox Tensor Preview" src="">
+                                </div>
+                                <div class="inspector-meta">
+                                    <span class="meta-label">Letterbox Preprocessing:</span>
+                                    <p class="meta-desc">Square padding with background color interpolation, preserving aspect ratio of ~15×18 glyphs.</p>
+                                    <span class="meta-badge">Input Tensor: [1, 3, 32, 32]</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </main>
+
+        <!-- Footer -->
+        <footer class="app-footer">
+            <p>Thai Character Deep Learning System • Medical Image & Deep Learning Project • Solution 3 (Pai + Pooh)</p>
+        </footer>
+    </div>
+
+    <script src="/static/js/app.js"></script>
+</body>
+</html>
