@@ -1,0 +1,73 @@
+# ====================================================================
+# Large data and results — do not commit to Git.
+# ====================================================================
+data/raw/*
+data/augmented/*
+data/splits/*.csv
+data/fonts/*
+
+outputs/checkpoints/*.pth
+outputs/logs/
+outputs/figures/
+outputs/*.csv
+outputs/*.json
+
+# Except for the .gitkeep file to preserve the folder structure on Git.
+!data/raw/.gitkeep
+!data/augmented/.gitkeep
+!data/splits/.gitkeep
+!data/fonts/.gitkeep
+!outputs/checkpoints/.gitkeep
+!outputs/logs/.gitkeep
+!outputs/figures/.gitkeep
+
+# ====================================================================
+# Python & Environments
+# ====================================================================
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Virtual Environments
+.venv/
+venv/
+env/
+ENV/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+
+# Jupyter Notebook
+.ipynb_checkpoints/
+*/.ipynb_checkpoints/*
+
+# ====================================================================
+# IDE / Editor / Operating System
+# ====================================================================
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Windows
+Thumbs.db
+ehthumbs.db
+[Dd]esktop.ini
