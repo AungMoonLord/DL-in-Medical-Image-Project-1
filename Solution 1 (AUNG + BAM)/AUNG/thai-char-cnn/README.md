@@ -269,7 +269,7 @@ data/raw/
 └── ...
     249/   ← ๙
 ```
-- **Dataset Labeling** [How to Label](https://docs.google.com/spreadsheets/d/1ZtMrTfZbhIlP1eUSFozFE3f46_5-Zdb_88y4N65u0xE/edit?gid=0#gid=0) 
+- **Dataset Labeling:** [How to Label](https://docs.google.com/spreadsheets/d/1ZtMrTfZbhIlP1eUSFozFE3f46_5-Zdb_88y4N65u0xE/edit?gid=0#gid=0) 
 ### 2. สำรวจข้อมูลเบื้องต้น (EDA)
 
 ```bash
