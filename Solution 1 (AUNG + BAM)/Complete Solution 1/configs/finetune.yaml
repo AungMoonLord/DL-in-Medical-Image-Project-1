@@ -1,0 +1,37 @@
+inherit: effnet_arcface.yaml
+
+experiment:
+  name: effnet_b0_finetune
+  tag: v2
+
+paths:
+  raw_dir:        data/finetune_raw
+  aug_dir:        data/finetune_augmented
+  splits_dir:     data/finetune_splits
+  train_csv:      data/finetune_splits/train.csv
+  val_csv:        data/finetune_splits/val.csv
+  class_map:      data/splits/class_map.json
+  ckpt_dir:       outputs/checkpoints_finetune
+  log_dir:        outputs/logs_finetune
+  figure_dir:     outputs/figures_finetune
+
+augmentation:
+  offline:
+    tail_threshold: 80
+    target_count: 80
+
+train:
+  stage1:
+    epochs: 10
+    batch_size: 64
+    sampler: instance
+    lr: 1.0e-4
+    backbone_lr_mult: 0.05
+    warmup_epochs: 1
+  stage2:
+    epochs: 5
+    batch_size: 64
+    sampler: instance
+    lr: 2.0e-4
+    warmup_epochs: 1
+    

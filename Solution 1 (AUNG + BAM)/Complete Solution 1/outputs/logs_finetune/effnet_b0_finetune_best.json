@@ -1,0 +1,17 @@
+{
+  "score": 0.9037884549872016,
+  "stage": 2,
+  "epoch": 4,
+  "metrics": {
+    "accuracy": 0.9275092936802974,
+    "macro_f1": 0.9037884549872016,
+    "weighted_f1": 0.9285322776691192,
+    "balanced_accuracy": 0.9092592592592593,
+    "macro_precision": 0.9087293943872893,
+    "macro_recall": 0.9092592592592593,
+    "top5_accuracy": 0.9860594795539034,
+    "head_recall": 0.0,
+    "mid_recall": 0.9261904761904762,
+    "tail_recall": 0.8731884057971014
+  }
+}

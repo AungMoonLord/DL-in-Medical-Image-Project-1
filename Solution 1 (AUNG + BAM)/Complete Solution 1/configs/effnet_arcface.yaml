@@ -1,0 +1,90 @@
+# ==============================================================
+# MAIN EXPERIMENT — EfficientNet-B0 + ArcFace + Logit Adjustment
+# คอนฟิกหลักที่ใช้ส่งอาจารย์
+#
+# VRAM ที่ใช้จริง: ~9-11 GB @ bs=96, 224px, bf16
+# เวลาเทรนโดยประมาณบน RTX 5060 Ti 16GB:
+#   Stage 1 (30 ep) ~28 นาที | Stage 2 (15 ep) ~7 นาที
+# ==============================================================
+
+inherit: base.yaml
+
+experiment:
+  name: effnet_b0_arcface_la
+  tag: v1
+  notes: >
+    Two-stage decoupled training with EfficientNet-B0 + ArcFace + Logit Adjustment
+    Tail classes augmented to 200 samples.
+
+model:
+  backbone: tf_efficientnet_b0.ns_jft_in1k
+  pretrained: true
+  head: arcface
+  embedding_dim: 512
+  dropout: 0.3
+  drop_path: 0.2
+  arcface:
+    scale: 30.0
+    margin: 0.30
+    easy_margin: false
+    adaptive_margin: true
+    margin_min: 0.10
+    margin_max: 0.35
+
+loss:
+  type: logit_adjusted
+  tau: 1.0
+  label_smoothing: 0.1
+  mixup:
+    enabled: true
+    alpha: 0.2
+    tail_aware: true
+
+augmentation:
+  online:
+    grid_distortion:
+      enabled: false           # ปิดป้องกัน ZeroDivisionError
+  offline:
+    tail_threshold: 50
+    target_count: 200
+    strength: strong
+
+train:
+  stage1:
+    epochs: 30
+    batch_size: 96
+    sampler: instance
+    freeze_backbone: false
+    lr: 4.0e-4
+    backbone_lr_mult: 0.1
+    weight_decay: 0.01
+    scheduler: cosine
+    warmup_epochs: 3
+  stage2:
+    epochs: 15
+    batch_size: 96
+    sampler: sqrt
+    freeze_backbone: true
+    lr: 1.0e-3
+    weight_decay: 1.0e-4
+    scheduler: cosine
+    warmup_epochs: 1
+
+hardware:
+  amp: true
+  amp_dtype: bfloat16
+  channels_last: true
+  num_workers: 4
+  persistent_workers: true
+
+eval:
+  primary_metric: macro_f1
+  tta:
+    enabled: true
+    n_views: 5
+# ==============================================================
+# ตัวเลือกสำรอง — ถ้าอยากดัน Macro-F1 ต่อ ให้ลองสลับมาใช้
+# ==============================================================
+# model.backbone: convnext_tiny.fb_in22k_ft_in1k   # แม่นกว่า ~2% แต่ช้ากว่า 2 เท่า (bs ลดเหลือ 48)
+# model.backbone: tf_efficientnet_b2.ns_jft_in1k   # ตรงกลาง, ใช้ image_size 260
+# data.image_size: 256                             # ช่วยกลุ่มวรรณยุกต์ ิ/ี/ึ/ื ชัดขึ้น

@@ -1,0 +1,265 @@
+[01:09:16] INFO    | Device: NVIDIA GeForce RTX 5060 Ti | sm_120 | 15.9 GB | torch 2.14.0+cu132
+[01:09:16] INFO    | 
+======================================================================
+CONFIG
+======================================================================
+project:
+  name: thai-char-cnn
+  num_classes: 72
+  seed: 42
+  deterministic: true
+paths:
+  raw_dir: data/finetune_raw
+  aug_dir: data/finetune_augmented
+  splits_dir: data/finetune_splits
+  train_csv: data/finetune_splits/train.csv
+  val_csv: data/finetune_splits/val.csv
+  class_map: data/splits/class_map.json
+  ckpt_dir: outputs/checkpoints_finetune
+  log_dir: outputs/logs_finetune
+  figure_dir: outputs/figures_finetune
+data:
+  image_size: 224
+  in_channels: 3
+  pad_color: 255
+  auto_invert: true
+  normalize:
+    mean:
+    - 0.485
+    - 0.456
+    - 0.406
+    std:
+    - 0.229
+    - 0.224
+    - 0.225
+split:
+  ratio: 0.8
+  stratify: true
+  min_val_per_class: 1
+  singleton_policy: val_first
+  enforce_no_leakage: true
+augmentation:
+  online:
+    rotate_limit: 10
+    scale_limit: 0.15
+    shear_limit: 8
+    translate_percent: 0.06
+    elastic:
+      enabled: true
+      alpha: 30
+      sigma: 6
+      p: 0.4
+    grid_distortion:
+      enabled: false
+      distort_limit: 0.2
+      p: 0.3
+    brightness_contrast: 0.2
+    morphology:
+      enabled: true
+      p: 0.3
+      max_kernel: 3
+    coarse_dropout:
+      enabled: true
+      p: 0.2
+      max_holes: 4
+      max_size: 12
+  offline:
+    tail_threshold: 80
+    target_count: 80
+    strength: strong
+  forbidden:
+    horizontal_flip: false
+    vertical_flip: false
+    rotate_90: false
+    color_invert: false
+model:
+  backbone: tf_efficientnet_b0.ns_jft_in1k
+  pretrained: true
+  head: arcface
+  embedding_dim: 512
+  dropout: 0.3
+  drop_path: 0.2
+  arcface:
+    scale: 30.0
+    margin: 0.3
+    easy_margin: false
+    adaptive_margin: true
+    margin_min: 0.1
+    margin_max: 0.35
+loss:
+  type: logit_adjusted
+  label_smoothing: 0.1
+  tau: 1.0
+  focal_gamma: 2.0
+  mixup:
+    enabled: true
+    alpha: 0.2
+    tail_aware: true
+train:
+  stage1:
+    enabled: true
+    epochs: 10
+    batch_size: 64
+    sampler: instance
+    freeze_backbone: false
+    optimizer: adamw
+    lr: 0.0001
+    backbone_lr_mult: 0.05
+    weight_decay: 0.01
+    scheduler: cosine
+    warmup_epochs: 1
+    min_lr: 1.0e-06
+  stage2:
+    enabled: true
+    epochs: 5
+    batch_size: 64
+    sampler: instance
+    freeze_backbone: true
+    optimizer: adamw
+    lr: 0.0002
+    weight_decay: 0.0001
+    scheduler: cosine
+    warmup_epochs: 1
+    min_lr: 1.0e-06
+hardware:
+  device: cuda
+  amp: true
+  amp_dtype: bfloat16
+  channels_last: true
+  compile: false
+  num_workers: 4
+  pin_memory: true
+  persistent_workers: true
+  prefetch_factor: 4
+  cudnn_benchmark: true
+  grad_accum_steps: 1
+  max_grad_norm: 5.0
+eval:
+  primary_metric: macro_f1
+  monitor_mode: max
+  early_stopping:
+    enabled: true
+    patience: 12
+    min_delta: 0.001
+  tta:
+    enabled: true
+    n_views: 5
+  report:
+    per_class_recall: true
+    confusion_matrix: true
+    confusion_top_k: 25
+    gradcam_samples: 12
+    confusion_groups:
+    - - ข
+      - ฃ
+    - - ท
+      - ฑ
+    - - พ
+      - ผ
+      - ฝ
+      - ฟ
+      - ฬ
+    - - ก
+      - ภ
+      - ถ
+      - ฤ
+    - - ด
+      - ต
+      - ค
+    - - ิ
+      - ี
+      - ึ
+      - ื
+    - - ่
+      - ้
+      - ๊
+    - - ช
+      - ซ
+    - - า
+      - ว
+      - ๅ
+    - - ็
+      - ๘
+    - - ๔
+      - ๕
+logging:
+  level: INFO
+  tensorboard: true
+  save_history_csv: true
+  log_interval: 20
+  save_last: true
+  save_best: true
+_config_file: configs\finetune.yaml
+experiment:
+  name: effnet_b0_finetune
+  tag: v2
+  notes: 'Two-stage decoupled training with EfficientNet-B0 + ArcFace + Logit Adjustment
+    Tail classes augmented to 200 samples.
+
+    '
+======================================================================
+[01:09:16] INFO    | โหลด class_map: 72 คลาส
+[01:09:17] INFO    | Model: tf_efficientnet_b0.ns_jft_in1k + arcface head | 4,700,796 params
+[01:09:17] INFO    | โหลด weight จาก outputs/checkpoints/best_model.pth (epoch 1)
+[01:09:18] INFO    | 
+==========================================================================
+[01:09:18] INFO    |   STAGE 1  |  sampler=instance  |  freeze_backbone=False
+[01:09:18] INFO    | ==========================================================================
+[01:09:18] INFO    | พารามิเตอร์: 4,700,796 ทั้งหมด | 4,700,796 trainable (100.0%)
+[01:09:18] INFO    | 
+Sampler = 'instance'
+class           ก่อน     หลัง(คาด)        ×
+ก                 80            80     1.0x
+ข                 80            80     1.0x
+ฃ                 80            80     1.0x
+ค                 80            80     1.0x
+ง                 80            80     1.0x
+๕                 80            80     1.0x
+๖                 80            80     1.0x
+๗                 80            80     1.0x
+๘                 80            80     1.0x
+๙                 80            80     1.0x
+[01:09:18] INFO    | train: 5,760 ภาพ | ต้นฉบับ 4,292 | augmented 1,468 | 72 คลาส
+[01:09:18] INFO    | val  : 1,076 ภาพ | ต้นฉบับ 1,076 | augmented 0 | 72 คลาส
+[01:10:25] INFO    | [S1] ep   1/10 | loss 4.7189 | train_acc 31.30% | Acc 80.67% | MacroF1 76.53% | BalAcc 79.05% | Top5 92.47% | head/mid/tail 0.0/81.0/74.9% | lr 1.00e-04 | 40s  ★ best
+[01:10:33] INFO    | [S1] ep   2/10 | loss 4.3435 | train_acc 34.10% | Acc 85.87% | MacroF1 81.27% | BalAcc 83.14% | Top5 96.00% | head/mid/tail 0.0/86.6/75.9% | lr 9.70e-05 | 8s  ★ best
+[01:10:41] INFO    | [S1] ep   3/10 | loss 4.1196 | train_acc 35.68% | Acc 88.57% | MacroF1 84.92% | BalAcc 85.61% | Top5 96.93% | head/mid/tail 0.0/89.4/77.5% | lr 8.84e-05 | 8s  ★ best
+[01:10:50] INFO    | [S1] ep   4/10 | loss 3.9553 | train_acc 37.07% | Acc 89.78% | MacroF1 86.78% | BalAcc 87.01% | Top5 97.40% | head/mid/tail 0.0/90.2/80.1% | lr 7.52e-05 | 7s  ★ best
+[01:10:58] INFO    | [S1] ep   5/10 | loss 3.7485 | train_acc 39.39% | Acc 91.08% | MacroF1 87.81% | BalAcc 88.51% | Top5 97.68% | head/mid/tail 0.0/91.5/82.2% | lr 5.91e-05 | 7s  ★ best
+[01:11:06] INFO    | [S1] ep   6/10 | loss 3.8264 | train_acc 39.05% | Acc 91.17% | MacroF1 88.62% | BalAcc 88.56% | Top5 97.86% | head/mid/tail 0.0/91.6/82.2% | lr 4.19e-05 | 7s  ★ best
+[01:11:15] INFO    | [S1] ep   7/10 | loss 3.8161 | train_acc 38.84% | Acc 91.17% | MacroF1 88.42% | BalAcc 88.49% | Top5 98.14% | head/mid/tail 0.0/91.7/81.7% | lr 2.58e-05 | 8s
+[01:11:23] INFO    | [S1] ep   8/10 | loss 3.7226 | train_acc 40.69% | Acc 91.64% | MacroF1 89.14% | BalAcc 89.36% | Top5 98.33% | head/mid/tail 0.0/92.0/83.8% | lr 1.26e-05 | 8s  ★ best
+[01:11:31] INFO    | [S1] ep   9/10 | loss 3.6654 | train_acc 42.03% | Acc 90.89% | MacroF1 88.06% | BalAcc 88.15% | Top5 98.14% | head/mid/tail 0.0/91.5/81.1% | lr 3.99e-06 | 7s
+[01:11:39] INFO    | [S1] ep  10/10 | loss 3.6307 | train_acc 42.59% | Acc 91.17% | MacroF1 89.04% | BalAcc 89.08% | Top5 97.96% | head/mid/tail 0.0/91.4/84.2% | lr 1.00e-06 | 7s
+[01:11:42] INFO    | 
+==========================================================================
+[01:11:42] INFO    |   STAGE 2  |  sampler=instance  |  freeze_backbone=True
+[01:11:42] INFO    | ==========================================================================
+[01:11:42] INFO    | พารามิเตอร์: 4,700,796 ทั้งหมด | 693,248 trainable (14.7%)
+[01:11:42] INFO    | 
+Sampler = 'instance'
+class           ก่อน     หลัง(คาด)        ×
+ก                 80            80     1.0x
+ข                 80            80     1.0x
+ฃ                 80            80     1.0x
+ค                 80            80     1.0x
+ง                 80            80     1.0x
+๕                 80            80     1.0x
+๖                 80            80     1.0x
+๗                 80            80     1.0x
+๘                 80            80     1.0x
+๙                 80            80     1.0x
+[01:11:42] INFO    | train: 5,760 ภาพ | ต้นฉบับ 4,292 | augmented 1,468 | 72 คลาส
+[01:11:42] INFO    | val  : 1,076 ภาพ | ต้นฉบับ 1,076 | augmented 0 | 72 คลาส
+[01:12:30] INFO    | [S2] ep   1/5 | loss 3.3413 | train_acc 46.20% | Acc 91.91% | MacroF1 89.18% | BalAcc 89.98% | Top5 98.33% | head/mid/tail 0.0/92.0/85.7% | lr 2.00e-04 | 26s  ★ best
+[01:12:35] INFO    | [S2] ep   2/5 | loss 3.2812 | train_acc 46.68% | Acc 92.38% | MacroF1 89.84% | BalAcc 90.14% | Top5 98.51% | head/mid/tail 0.0/92.5/85.1% | lr 1.71e-04 | 4s  ★ best
+[01:12:39] INFO    | [S2] ep   3/5 | loss 3.2216 | train_acc 47.40% | Acc 92.29% | MacroF1 89.87% | BalAcc 90.35% | Top5 98.42% | head/mid/tail 0.0/92.3/86.2% | lr 1.00e-04 | 4s
+[01:12:44] INFO    | [S2] ep   4/5 | loss 3.2082 | train_acc 47.66% | Acc 92.75% | MacroF1 90.38% | BalAcc 90.93% | Top5 98.61% | head/mid/tail 0.0/92.6/87.3% | lr 3.01e-05 | 4s  ★ best
+[01:12:48] INFO    | [S2] ep   5/5 | loss 3.1675 | train_acc 48.02% | Acc 92.66% | MacroF1 90.36% | BalAcc 90.90% | Top5 98.70% | head/mid/tail 0.0/92.6/87.3% | lr 1.00e-06 | 4s
+[01:12:50] INFO    | 
+==========================================================================
+[01:12:50] INFO    |   เทรนเสร็จใน 3m 31.6s
+[01:12:50] INFO    |   Best macro_f1 = 90.38%  (stage 2, epoch 4)
+[01:12:50] INFO    |   Checkpoint: outputs/checkpoints_finetune/best_model.pth
+[01:12:50] INFO    | ==========================================================================
+[01:12:50] INFO    | ขั้นถัดไป: python -m src.evaluate --ckpt outputs/checkpoints/best_model.pth
