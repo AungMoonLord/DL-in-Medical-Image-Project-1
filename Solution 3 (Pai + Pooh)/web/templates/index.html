@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Thai Character Classifier (ver2) | Deep Learning Medical Imaging</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;600;700;800&family=Sarabun:wght@300;400;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body class="dark-theme">
+    <div class="app-background">
+        <div class="glow-orb orb-1"></div>
+        <div class="glow-orb orb-2"></div>
+        <div class="glow-orb orb-3"></div>
+    </div>
+
+    <header class="app-header">
+        <div class="header-content container">
+            <div class="brand-group">
+                <div class="brand-logo">
+                    <span class="logo-glyph">ก</span>
+                </div>
+                <div>
+                    <h1 class="brand-title">Thai Character Classifier <span class="badge-ver">v2.0 Cleaned</span></h1>
+                    <p class="brand-subtitle">Solution 3 (Pai + Pooh) • 72-Class Deep Learning Pipeline</p>
+                </div>
+            </div>
+
+            <div class="header-actions">
+                <div class="device-pill" id="devicePill">
+                    <span class="pulse-dot"></span>
+                    <span id="deviceText">CUDA: Initializing...</span>
+                </div>
+                <button class="btn btn-secondary btn-sm" id="openCheckpointModalBtn">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                    Switch Checkpoint
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <main class="container app-main">
+        <!-- Model Selection Ribbon -->
+        <section class="model-ribbon-card card">
+            <div class="ribbon-header">
+                <div class="ribbon-title-wrap">
+                    <span class="section-tag">Active Model Architecture</span>
+                    <h3 id="activeModelName">Custom GlyphCNN (ver2)</h3>
+                </div>
+                <div class="model-badge-group">
+                    <span class="badge badge-primary" id="activeModelBadge">Native 32px</span>
+                    <span class="badge badge-info" id="activeModelRes">Res: 32x32</span>
+                </div>
+            </div>
+
+            <div class="model-selector-chips" id="modelSelectorChips">
+                <!-- Dynamically populated chips -->
+            </div>
+        </section>
+
+        <!-- Workspace Grid -->
+        <div class="workspace-grid">
+            <!-- Left Column: Input and Canvas Controls -->
+            <section class="input-panel card">
+                <div class="tabs-header">
+                    <button class="tab-btn active" data-tab="draw">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 19l7-7 3 3-7 7-3-3z"/><path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z"/><path d="M2 2l7.586 7.586"/></svg>
+                        Drawing Pad
+                    </button>
+                    <button class="tab-btn" data-tab="upload">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                        Upload Image
+                    </button>
+                    <button class="tab-btn" data-tab="samples">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="21" x2="9" y2="9"/></svg>
+                        Cleaned Dataset (1-Click)
+                    </button>
+                </div>
+
+                <!-- Tab 1: Drawing Pad -->
+                <div class="tab-content active" id="tab-draw">
+                    <div class="drawing-controls-bar">
+                        <!-- Brush Mode Switcher -->
+                        <div class="control-group">
+                            <label class="control-label">Brush Mode</label>
+                            <div class="pill-toggle">
+                                <button class="pill-btn active" id="brushSmoothBtn" data-mode="smooth">Smooth</button>
+                                <button class="pill-btn" id="brushPixelBtn" data-mode="pixel">Pixel / Binary</button>
+                            </div>
+                        </div>
+
+                        <!-- Canvas Resolution -->
+                        <div class="control-group">
+                            <label class="control-label">Canvas Res</label>
+                            <select id="canvasResSelect" class="select-input">
+                                <option value="32">32 × 32 (Dataset Native)</option>
+                                <option value="64">64 × 64 (Hi-Res)</option>
+                                <option value="128">128 × 128</option>
+                                <option value="280" selected>280 × 280 (Standard Pad)</option>
+                            </select>
+                        </div>
+
+                        <!-- Brush Size -->
+                        <div class="control-group flex-1">
+                            <div class="control-label-row">
+                                <label class="control-label">Stroke Width</label>
+                                <span class="val-badge" id="brushSizeVal">14px</span>
+                            </div>
+                            <input type="range" id="brushSize" min="2" max="36" value="14" class="range-slider">
+                        </div>
+                    </div>
+
+                    <!-- Additional Preprocessing Controls -->
+                    <div class="preprocess-config-bar">
+                        <div class="control-group flex-1">
+                            <div class="control-label-row">
+                                <label class="control-label">Safety Padding Margin</label>
+                                <span class="val-badge" id="paddingVal">15%</span>
+                            </div>
+                            <input type="range" id="paddingSlider" min="0" max="40" value="15" class="range-slider">
+                        </div>
+
+                        <div class="control-group toggle-group">
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="focalCleanerToggle">
+                                <span class="slider round"></span>
+                            </label>
+                            <label for="focalCleanerToggle" class="control-label cursor-pointer">CCA Focal Cleaner</label>
+                        </div>
+                    </div>
+
+                    <!-- Canvas Wrapper -->
+                    <div class="canvas-wrapper">
+                        <div class="canvas-container" id="canvasContainer">
+                            <canvas id="drawingCanvas"></canvas>
+                            <div class="canvas-grid-overlay" id="gridOverlay"></div>
+                            <div class="canvas-placeholder" id="canvasPlaceholder">
+                                <div class="placeholder-icon">✍️</div>
+                                <span>Draw a Thai character here...</span>
+                            </div>
+                        </div>
+
+                        <div class="canvas-actions">
+                            <button class="btn btn-secondary btn-sm" id="clearBtn">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                                Clear
+                            </button>
+                            <button class="btn btn-secondary btn-sm" id="undoBtn">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>
+                                Undo
+                            </button>
+                            <button class="btn btn-primary" id="predictBtn">
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polygon points="10 8 16 12 10 16 10 8"/></svg>
+                                Classify Character
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Tab 2: Upload Image -->
+                <div class="tab-content" id="tab-upload">
+                    <div class="upload-dropzone" id="dropzone">
+                        <input type="file" id="fileInput" accept="image/*" class="file-input-hidden">
+                        <div class="dropzone-content">
+                            <div class="upload-icon">📁</div>
+                            <h4>Drag & Drop Character Image</h4>
+                            <p>or click to browse from your device (.jpg, .png, .bmp)</p>
+                        </div>
+                    </div>
+
+                    <div class="upload-preview-wrap" id="previewContainer" style="display: none;">
+                        <img id="uploadPreviewImg" alt="Upload Preview" class="upload-preview-img">
+                        <div class="preview-actions">
+                            <button class="btn btn-secondary btn-sm" id="removeUploadBtn">Remove Image</button>
+                            <button class="btn btn-primary" id="predictUploadBtn">Classify Uploaded Image</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Tab 3: Dataset Samples -->
+                <div class="tab-content" id="tab-samples">
+                    <div class="samples-header">
+                        <p class="samples-subtitle">Click any sample below to instantly run inference through the active model:</p>
+                        <button class="btn btn-secondary btn-sm" id="refreshSamplesBtn">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+                            Refresh Samples
+                        </button>
+                    </div>
+                    <div class="samples-grid" id="samplesGrid">
+                        <!-- Loaded dynamically -->
+                    </div>
+                </div>
+            </section>
+
+            <!-- Right Column: Results and Multi-Stage Tensor Preview -->
+            <section class="results-panel card">
+                <div class="results-header">
+                    <h3 class="panel-title">Classification Results</h3>
+                    <div class="latency-tag" id="latencyTag" style="display: none;">
+                        <span id="latencyVal">0.0 ms</span>
+                    </div>
+                </div>
+
+                <!-- Empty State -->
+                <div class="results-empty-state" id="resultsEmpty">
+                    <div class="empty-icon">🎯</div>
+                    <h4>Awaiting Input</h4>
+                    <p>Draw a character on the pad or select a sample to see real-time inference predictions.</p>
+                </div>
+
+                <!-- Loading State -->
+                <div class="results-loading-state" id="resultsLoading" style="display: none;">
+                    <div class="spinner"></div>
+                    <p>Running Neural Network Inference...</p>
+                </div>
+
+                <!-- Prediction Content -->
+                <div class="results-content" id="resultsContent" style="display: none;">
+                    <!-- Hero Top Prediction -->
+                    <div class="hero-prediction-card">
+                        <div class="hero-glyph-box">
+                            <span class="hero-glyph" id="heroGlyph">ก</span>
+                            <span class="hero-conf-pill" id="heroScore">99.8%</span>
+                        </div>
+
+                        <div class="hero-details">
+                            <div class="hero-names">
+                                <h2 class="hero-thai-name" id="heroThaiName">ก ไก่</h2>
+                                <h4 class="hero-en-name" id="heroEnName">Ko Kai</h4>
+                            </div>
+
+                            <div class="hero-meta-tags">
+                                <span class="tag tag-type" id="heroTypeBadge">Consonant (Middle)</span>
+                                <span class="tag tag-code" id="heroCodeBadge">TIS-620: 161 (0xA1)</span>
+                            </div>
+
+                            <p class="hero-meaning" id="heroMeaning">Meaning: Chicken</p>
+                        </div>
+                    </div>
+
+                    <!-- Multi-Stage Preprocessing Tensor Previews -->
+                    <div class="tensor-preview-section">
+                        <h4 class="preview-section-title">Multi-Stage Preprocessing Pipeline</h4>
+                        <div class="stage-previews-grid">
+                            <div class="stage-box">
+                                <span class="stage-label">1. Tight Bounding Box</span>
+                                <div class="stage-img-wrap">
+                                    <img id="cropPreviewImg" alt="Tight Crop">
+                                </div>
+                            </div>
+                            <div class="stage-box">
+                                <span class="stage-label">2. Letterbox Padded Tensor</span>
+                                <div class="stage-img-wrap">
+                                    <img id="tensorPreviewImg" alt="Model Input Tensor">
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Top-K Ranked List -->
+                    <div class="top-k-section">
+                        <h4 class="top-k-title">Top-5 Probabilities</h4>
+                        <div class="predictions-list" id="predictionsList">
+                            <!-- Populated dynamically -->
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </div>
+    </main>
+
+    <!-- Custom Checkpoint Modal -->
+    <div class="modal-backdrop" id="checkpointModal" style="display: none;">
+        <div class="modal-card">
+            <div class="modal-header">
+                <h3>Load Custom Model Checkpoint</h3>
+                <button class="btn-close" id="closeCheckpointModalBtn">✕</button>
+            </div>
+            <div class="modal-body">
+                <p class="modal-description">
+                    Load any trained checkpoint from your workspace directly. The system automatically inspects the internal state dictionary and configures the architecture.
+                </p>
+
+                <!-- Quick Presets -->
+                <div class="preset-group">
+                    <label class="control-label">Quick Workspace Presets</label>
+                    <div class="preset-buttons">
+                        <button class="btn btn-outline btn-sm" id="presetSol3v2">Solution 3 (v2 Native)</button>
+                        <button class="btn btn-outline btn-sm" id="presetSol3v1">Solution 3 (v1 Legacy)</button>
+                        <button class="btn btn-outline btn-sm" id="presetSol2">Solution 2 (EfficientNet-B0)</button>
+                    </div>
+                </div>
+
+                <!-- Custom Path Input -->
+                <div class="input-group">
+                    <label class="control-label" for="customCkptInput">Checkpoint File Path (.pt / .pth)</label>
+                    <input type="text" id="customCkptInput" class="text-input" placeholder="c:\workspace\vscode\...\best_model.pt">
+                </div>
+
+                <div class="input-group">
+                    <label class="control-label" for="customModelNameInput">Display Alias (Optional)</label>
+                    <input type="text" id="customModelNameInput" class="text-input" placeholder="e.g. My-FineTuned-ResNet">
+                </div>
+
+                <div id="modalStatusMsg" class="modal-status" style="display: none;"></div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" id="cancelModalBtn">Cancel</button>
+                <button class="btn btn-primary" id="submitLoadCkptBtn">Load & Activate Checkpoint</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+</body>
+</html>

@@ -1,0 +1,32 @@
+[
+  {
+    "model_name": "Solution 3 (CustomGlyphCNN v2 Cleaned)",
+    "model_type": "custom_cnn",
+    "resolution": "32x32",
+    "top1_acc": 98.53,
+    "top3_acc": 99.72,
+    "macro_f1": 95.56,
+    "weighted_f1": 98.55,
+    "samples_per_sec": 398.1
+  },
+  {
+    "model_name": "Solution 3 (CustomGlyphCNN v1)",
+    "model_type": "custom_cnn",
+    "resolution": "32x32",
+    "top1_acc": 2.28,
+    "top3_acc": 14.66,
+    "macro_f1": 4.96,
+    "weighted_f1": 2.07,
+    "samples_per_sec": 445.2
+  },
+  {
+    "model_name": "Solution 2 (EfficientNet-B0)",
+    "model_type": "efficientnet_b0",
+    "resolution": "224x224",
+    "top1_acc": 33.51,
+    "top3_acc": 55.05,
+    "macro_f1": 23.54,
+    "weighted_f1": 33.93,
+    "samples_per_sec": 35.6
+  }
+]
