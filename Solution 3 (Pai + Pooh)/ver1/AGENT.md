@@ -72,6 +72,9 @@ The dataset contains **62,707 images** across **72 classes**. Folder names corre
 | 213 | 0xD5 | ี | Sara Ii (Vowel) | 143 | 114 | 29 |
 | 214 | 0xD6 | ึ | Sara Ue (Vowel) | 14 | 11 | 3 |
 | 215 | 0xD7 | ื | Sara Uee (Vowel) | 60 | 48 | 12 |
+
+---
+
 | 216 | 0xD8 | ุ | Sara U (Vowel) | 155 | 123 | 32 |
 | 217 | 0xD9 | ู | Sara Uu (Vowel) | 139 | 111 | 28 |
 | 224 | 0xE0 | เ | Sara E (Leading Vowel) | 203 | 162 | 41 |
@@ -84,6 +87,9 @@ The dataset contains **62,707 images** across **72 classes**. Folder names corre
 | 231 | 0xE7 | ็ | Maitaikhu (Tone/Vowel Mark) | 119 | 95 | 24 |
 | 232 | 0xE8 | ่ | Mai Ek (Tone Marker) | 479 | 381 | 98 |
 | 233 | 0xE9 | ้ | Mai Tho (Tone Marker) | 1,007 | 802 | 205 |
+
+---
+
 | 234 | 0xEA | ๊ | Mai Tri (Tone Marker) | 49 | 39 | 10 |
 | 236 | 0xEC | ์ | Thanthakhat / Karan (Silence Marker) | 726 | 578 | 148 |
 | 240 | 0xF0 | ๐ | Sun (Thai Digit 0) | 83 | 66 | 17 |

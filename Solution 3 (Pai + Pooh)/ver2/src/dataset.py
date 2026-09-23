@@ -13,7 +13,7 @@ from collections import Counter, defaultdict
 import hashlib
 import os
 from pathlib import Path
-from typing import Callable, Dict, List, Optional, Tuple, Union
+from typing import Callable, Dict, List, Optional, Sequence, Tuple, Union
 
 import numpy as np
 import pandas as pd
@@ -110,63 +110,173 @@ def letterbox_pad(
     return padded
 
 
+def _normalize_paths(paths: Optional[Union[str, Path, Sequence[Union[str, Path]]]]) -> List[Path]:
+    if paths is None:
+        return []
+    if isinstance(paths, (str, Path)):
+        return [Path(paths)]
+    return [Path(p) for p in paths]
+
+
+def is_valid_glyph_sample(img_path: Union[str, Path], min_pixels: int = 5) -> bool:
+    """
+    Checks if an image file is readable and contains valid character stroke content
+    (not pure black/white blank or unreadable zero-size corruption).
+    """
+    try:
+        with Image.open(img_path) as img:
+            w, h = img.size
+            if w <= 0 or h <= 0:
+                return False
+            inv = invert_glyph_if_needed(img)
+            arr = np.array(inv.convert("L"))
+            # Count bright stroke pixels (threshold at 30/255)
+            stroke_pixels = np.count_nonzero(arr > 30)
+            return stroke_pixels >= min_pixels
+    except Exception:
+        return False
+
+
 def build_split_dataframes(
-    dataset_dir: Union[str, Path],
+    dataset_dir: Union[str, Path, Sequence[Union[str, Path]]],
+    val_dir: Optional[Union[str, Path, Sequence[Union[str, Path]]]] = None,
     train_ratio: float = 0.8,
+    use_auto_reject: bool = False,
+    min_foreground_pixels: int = 5,
 ) -> Tuple[pd.DataFrame, pd.DataFrame, Dict[int, int]]:
     """
-    Builds zero-leakage deterministic train and test DataFrames.
-    """
-    dataset_path = Path(dataset_dir)
-    if not dataset_path.exists():
-        raise FileNotFoundError(f"Dataset directory not found: {dataset_path}")
-
-    class_dirs = sorted(
-        [d for d in dataset_path.iterdir() if d.is_dir() and d.name.isdigit() and not d.name.startswith(".")],
-        key=lambda d: int(d.name),
-    )
-
-    class_to_idx = {int(d.name): idx for idx, d in enumerate(class_dirs)}
+    Builds train and test DataFrames supporting single or multiple dataset sources.
     
+    Features:
+    - Multiple Paths: Accepts a single directory or a list/tuple of directories.
+    - Sparse Classes: Individual directories do not need to contain all classes;
+      the union of all available classes across all provided paths is computed.
+    - Zero-Leakage: Document page / scanner counterpart grouping applies across all paths.
+    - Auto-Reject Sample: When use_auto_reject=True, scans and filters out corrupted,
+      empty, or non-character blank crops. When False (default for cleaned sets),
+      accepts all samples with maximum I/O indexing speed.
+    """
+    train_roots = _normalize_paths(dataset_dir)
+    val_roots = _normalize_paths(val_dir)
+
+    if not train_roots:
+        raise ValueError("At least one dataset directory must be provided.")
+
+    for p in train_roots:
+        if not p.exists():
+            raise FileNotFoundError(f"Training dataset directory not found: {p}")
+    for p in val_roots:
+        if not p.exists():
+            raise FileNotFoundError(f"Validation dataset directory not found: {p}")
+
+    # Check if train_roots have train/ and val/ (or test/) subfolders
+    if not val_roots:
+        sub_train, sub_val = [], []
+        for p in train_roots:
+            if (p / "train").is_dir() and ((p / "val").is_dir() or (p / "test").is_dir()):
+                sub_train.append(p / "train")
+                sub_val.append(p / "val" if (p / "val").is_dir() else p / "test")
+        if len(sub_train) == len(train_roots):
+            train_roots = sub_train
+            val_roots = sub_val
+
+    # Discover the global union of all class directories across all sources
+    all_class_numbers = set()
+    for root in (train_roots + val_roots):
+        for d in root.iterdir():
+            if d.is_dir() and d.name.isdigit() and not d.name.startswith("."):
+                all_class_numbers.add(int(d.name))
+
+    if not all_class_numbers:
+        raise ValueError(f"No numeric class folders (e.g. 161/, 162/) found in provided paths.")
+
+    class_numbers = sorted(list(all_class_numbers))
+    class_to_idx = {c_num: idx for idx, c_num in enumerate(class_numbers)}
+
     train_records: List[dict] = []
     test_records: List[dict] = []
+    rejected_count = 0
 
-    for class_dir in class_dirs:
-        class_number = int(class_dir.name)
-        class_idx = class_to_idx[class_number]
-        character = tis620_to_char(class_number)
+    # Case A: Separate validation directories provided
+    if val_roots:
+        for split_name, roots, records in [("train", train_roots, train_records), ("test", val_roots, test_records)]:
+            for root in roots:
+                for class_num in class_numbers:
+                    c_dir = root / str(class_num)
+                    if not c_dir.is_dir():
+                        continue
+                    class_idx = class_to_idx[class_num]
+                    character = tis620_to_char(class_num)
+                    for f in sorted(c_dir.iterdir()):
+                        if f.is_file() and f.suffix.lower() in VALID_EXTENSIONS and not f.name.startswith("."):
+                            if use_auto_reject and not is_valid_glyph_sample(f, min_pixels=min_foreground_pixels):
+                                rejected_count += 1
+                                continue
+                            records.append({
+                                "filepath": str(f),
+                                "filename": f.name,
+                                "class_number": class_num,
+                                "class_idx": class_idx,
+                                "character": character,
+                                "source_root": root.name,
+                                "group_key": f"{root.stem}_{get_group_key(f.name)}",
+                                "split": split_name,
+                            })
 
-        files = sorted(
-            [
-                f.name
-                for f in class_dir.iterdir()
-                if f.is_file() and f.suffix.lower() in VALID_EXTENSIONS and not f.name.startswith(".")
-            ]
-        )
-        n_samples = len(files)
+        if use_auto_reject and rejected_count > 0:
+            print(f"🧹 Auto-Reject Filter: Filtered out {rejected_count} corrupted/blank samples.")
 
-        if n_samples == 0:
-            continue
+        train_df = pd.DataFrame(train_records)
+        test_df = pd.DataFrame(test_records)
+        return train_df, test_df, class_to_idx
 
-        groups = defaultdict(list)
-        for f in files:
-            groups[get_group_key(f)].append(f)
+    # Case B: Single/Multiple directories with Zero-Leakage Deterministic Hash Split
+    for root in train_roots:
+        for class_num in class_numbers:
+            c_dir = root / str(class_num)
+            if not c_dir.is_dir():
+                continue
+            class_idx = class_to_idx[class_num]
+            character = tis620_to_char(class_num)
 
-        for g_key, g_files in groups.items():
-            hash_val = int(hashlib.sha256(g_key.encode("utf-8")).hexdigest(), 16)
-            assigned_split = "train" if (hash_val % 100) < int(train_ratio * 100) else "test"
+            files = sorted(
+                [
+                    f.name
+                    for f in c_dir.iterdir()
+                    if f.is_file() and f.suffix.lower() in VALID_EXTENSIONS and not f.name.startswith(".")
+                ]
+            )
+            if not files:
+                continue
 
-            target_records = train_records if assigned_split == "train" else test_records
-            for f_name in g_files:
-                target_records.append({
-                    "filepath": str(class_dir / f_name),
-                    "filename": f_name,
-                    "class_number": class_number,
-                    "class_idx": class_idx,
-                    "character": character,
-                    "group_key": g_key,
-                    "split": assigned_split,
-                })
+            groups = defaultdict(list)
+            for f in files:
+                f_path = c_dir / f
+                if use_auto_reject and not is_valid_glyph_sample(f_path, min_pixels=min_foreground_pixels):
+                    rejected_count += 1
+                    continue
+                g_key = f"{root.stem}_{get_group_key(f)}"
+                groups[g_key].append(f)
+
+            for g_key, g_files in groups.items():
+                hash_val = int(hashlib.sha256(g_key.encode("utf-8")).hexdigest(), 16)
+                assigned_split = "train" if (hash_val % 100) < int(train_ratio * 100) else "test"
+
+                target_records = train_records if assigned_split == "train" else test_records
+                for f_name in g_files:
+                    target_records.append({
+                        "filepath": str(c_dir / f_name),
+                        "filename": f_name,
+                        "class_number": class_num,
+                        "class_idx": class_idx,
+                        "character": character,
+                        "source_root": root.name,
+                        "group_key": g_key,
+                        "split": assigned_split,
+                    })
+
+    if use_auto_reject and rejected_count > 0:
+        print(f"🧹 Auto-Reject Filter: Filtered out {rejected_count} corrupted/blank samples.")
 
     train_df = pd.DataFrame(train_records)
     test_df = pd.DataFrame(test_records)
@@ -229,20 +339,28 @@ class ThaiCharacterDataset(Dataset):
 
 
 def build_dataloaders(
-    dataset_dir: Union[str, Path],
+    dataset_dir: Union[str, Path, Sequence[Union[str, Path]]],
+    val_dir: Optional[Union[str, Path, Sequence[Union[str, Path]]]] = None,
+    train_ratio: float = 0.8,
     batch_size: int = 64,
     target_size: Tuple[int, int] = (32, 32),
     num_workers: int = 0,
     use_balanced_sampler: bool = False,
     use_focal_cleaner: bool = False,
     use_pedestal_aug: bool = True,
+    use_auto_reject: bool = False,
 ) -> Tuple[DataLoader, DataLoader, Dict[int, int], pd.DataFrame, pd.DataFrame]:
     """
     Constructs train and test DataLoaders with zero data leakage.
     Note: When using class-balanced loss (CB Focal), set use_balanced_sampler=False
     to prevent quadratic over-weighting of rare classes.
     """
-    train_df, test_df, class_to_idx = build_split_dataframes(dataset_dir, train_ratio=0.8)
+    train_df, test_df, class_to_idx = build_split_dataframes(
+        dataset_dir=dataset_dir,
+        val_dir=val_dir,
+        train_ratio=train_ratio,
+        use_auto_reject=use_auto_reject,
+    )
 
     train_transform = get_train_transform()
     val_transform = get_val_transform()

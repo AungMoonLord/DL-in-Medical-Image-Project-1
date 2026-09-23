@@ -48,23 +48,25 @@ class ClassBalancedFocalLoss(nn.Module):
         self.register_buffer("class_weights", torch.tensor(weights, dtype=torch.float32))
 
     def forward(self, logits: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
-        probs = F.softmax(logits, dim=-1)
+        # Cast to float32 to ensure numerical stability under mixed precision / AMP
+        logits = logits.float()
+        targets = targets.long()
+
+        # Numerically stable cross-entropy with native PyTorch CUDA kernel
+        ce_loss = F.cross_entropy(
+            logits,
+            targets,
+            label_smoothing=self.label_smoothing,
+            reduction="none",
+        )
+
+        # Log-softmax based pt calculation for rock-solid stability
         log_probs = F.log_softmax(logits, dim=-1)
+        target_log_probs = log_probs.gather(1, targets.unsqueeze(1)).squeeze(1)
+        pt = torch.exp(target_log_probs)
+        focal_weight = torch.pow((1.0 - pt).clamp(min=1e-6, max=1.0), self.gamma)
 
-        # Label smoothing one-hot encoding
-        with torch.no_grad():
-            smooth_targets = torch.full_like(logits, self.label_smoothing / max(1, self.num_classes - 1))
-            smooth_targets.scatter_(1, targets.unsqueeze(1), 1.0 - self.label_smoothing)
-
-        # Focal modulating factor: (1 - p_t)^gamma based on true class probability
-        pt = probs.gather(1, targets.unsqueeze(1)).squeeze(1)
-        focal_weight = torch.pow((1.0 - pt).clamp(min=0.0, max=1.0), self.gamma)
-
-        # Batch class weights
         batch_weights = self.class_weights[targets]
-
-        # Cross entropy loss
-        ce_loss = -torch.sum(smooth_targets * log_probs, dim=-1)
         loss = batch_weights * focal_weight * ce_loss
         return loss.mean()
 
