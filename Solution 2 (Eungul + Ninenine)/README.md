@@ -11,8 +11,8 @@
 
 | เมตริกประเมินผล (Metric) | ค่าที่ได้ (Score) | คำอธิบาย |
 |---|:---:|---|
-| **Validation Accuracy** | **87.62%** | ความแม่นยำรวมทุกคลาส |
-| **Validation Macro-F1** | **87.22%** | เมตริกหลักตัดสิน (ให้ความสำคัญกับคลาสส่วนน้อยเท่าเทียมกัน) |
+| **Validation Accuracy** | **91.43%** | ความแม่นยำรวมทุกคลาส |
+| **Validation Macro-F1** | **0.8990** | เมตริกหลักตัดสิน (ให้ความสำคัญกับคลาสส่วนน้อยเท่าเทียมกัน) |
 | **Stage 2 Fine-Tuning** | **35 Epochs** | ปลดล็อก Feature Backbone 3 บล็อกท้ายสุด |
 | **Primary Checkpoint** | `best_thai_character_finetuned.pth` | Checkpoint ที่ดีที่สุดพร้อมใช้ในการสอบและการทำนายจริง |
 | **Base Checkpoint** | `best_thai_character_model_v2.pth` | Checkpoint ฐานสำหรับทำ Fine-tuning ต่อยอด |
@@ -22,25 +22,66 @@
 ## 🏗️ สถาปัตยกรรมระบบ (Model Architecture & Strategy)
 
 ```mermaid
-flowchart LR
-    subgraph S_PRE ["1. Preprocessing & Augmentation"]
-        A1["Raw Input Image"] --> A2["PadToSquare (Fill=255)"]
-        A2 --> A3["Resize 224x224"]
-        A3 --> A4["RandomAffine (Online, No Flip)"]
-        A4 --> A5["ImageNet Normalization"]
+flowchart TD
+    subgraph S_DATA ["1. DATA PIPELINE & LEAK-FREE SPLIT"]
+        D1["ThaiCharacter Dataset<br/>5,368 ภาพจริง | 72 คลาส<br/>(TIS-620 Folders 161–249)"] --> D2{"Stratified Split 80/20<br/>จัดกลุ่มตาม label<br/>(คลาส 1 ภาพส่งเข้า Train)"}
+        D2 -->|"20% (1,074 ภาพ)"| D_VAL["Clean Validation Set<br/>ภาพจริง 100% ไม่ Augment"]
+        D2 -->|"80% (4,294 ภาพ)"| D_TR["Raw Train Set<br/>(Class Imbalance)"]
+        D_TR --> D3["Train-Only Augmentation<br/>- Random Rotation (±8°)<br/>- Random Affine & Shear<br/>- Color Jitter<br/>(เติมให้ครบ 80 ภาพ/คลาส)"]
+        D3 --> D4["Augmented Train Set (5,760 ภาพ)<br/>Class Map: folder_id ↔ char ↔ label"]
     end
 
-    subgraph S_MODEL ["2. EfficientNet-B0 Backbone"]
-        A5 --> B1["features: EfficientNet-B0"]
-        B1 --> B2["avgpool: AdaptiveAvgPool2d(1)"]
-        B2 --> B3["classifier: Dropout(0.35) -> Linear(1280, 72)"]
+    subgraph S_PRE ["2. PREPROCESSING & CONSTRAINTS"]
+        D4 --> P1["Preprocessing Pipeline<br/>- PadToSquare: เติมขอบขาว (255) คงสัดส่วนหัวอักษร<br/>- Resize: 224×224 ตรงตามโครงสร้าง<br/>- ImageNet Normalization"]
+        D_VAL --> P1
+        P1 -.-> P_RULE["❌ กฎเหล็ก: ห้าม Flip แนวนอน/แนวตั้ง<br/>(ป้องกัน ด ↔ ค, บ ↔ ผ สลับความหมาย)"]
     end
 
-    subgraph S_TRAIN ["3. Two-Stage Transfer Learning"]
-        B3 --> C1["Stage 1: Frozen Backbone (5 Epochs, LR=1e-3)"]
-        C1 --> C2["Stage 2: Fine-Tuning 3 บล็อกท้าย (35 Epochs, LR=1e-5 / 1e-4)"]
-        C2 --> C3["Loss: Class-Weighted CE + Label Smoothing (0.05)"]
+    subgraph S_MODEL ["3. EFFICIENTNET-B0 ARCHITECTURE"]
+        P1 --> M1["Input Tensors (224×224×3)"]
+        M1 --> M2["EfficientNet-B0 Backbone<br/>(Pretrained บน ImageNet Weights)<br/>features: 16 MBConv Blocks"]
+        M2 --> M3["AdaptiveAvgPool2d (Global Average Pooling)<br/>Output Feature Map: 1280-D Vector"]
+        M3 --> M4["Custom Classifier Head<br/>- Dropout (p=0.35)<br/>- Linear (1280 → 72 คลาส)"]
     end
+
+    subgraph S_TRAIN ["4. TWO-STAGE BALANCED TRAINING"]
+        direction TB
+        subgraph STAGE1 ["Stage 1 — Feature Transfer (5 Epochs)"]
+            T1["Backbone: FROZEN (requires_grad = False)"]
+            T2["Classifier Head: Trainable (LR = 1e-3)"]
+            T3["Loss: Class-Weighted CE + Label Smoothing (0.05)"]
+            T1 --- T2 --- T3
+        end
+        subgraph STAGE2 ["Stage 2 — Balanced Fine-Tuning (35 Epochs)"]
+            T4["Backbone 3 บล็อกท้าย: UNLOCKED (features[-3:])"]
+            T5["Differential LR: Backbone = 5e-6, Classifier = 5e-5"]
+            T6["Optimizer: AdamW + ReduceLROnPlateau"]
+            T4 --- T5 --- T6
+        end
+        M4 --> STAGE1
+        STAGE1 -->|"Checkpoint v2"| STAGE2
+    end
+
+    STAGE1 -.-> ENG["Engine: AMP float16 + CUDA Acceleration"]
+    STAGE2 -.-> ENG
+
+    subgraph S_EVAL ["5. EVALUATION & PHENOMENON"]
+        STAGE2 --> E1["Primary Metric: Accuracy 91.43% | Macro-F1 0.8990"]
+        E1 --> E2["Per-Class F1: ตัวอักษรเอกลักษณ์เฉพาะตัว (โ, ม, พ, ร) ได้ F1 1.00"]
+        E1 --> E3["Catastrophic Forgetting Analysis:<br/>- Printed General: 73.12% | Handwritten: 8.31%<br/>(โมเดลปรับสมดุลฟอนต์ตัวพิมพ์ผ่านการคุม 35 Epochs)"]
+        E1 --> E4["Confusion Matrix 72×72: วิเคราะห์คู่อักษรสับสน (ไม้ไต่คู้ ↔ เลข ๘, สระ า ↔ สระ ๅ)"]
+    end
+
+    subgraph S_DELIV ["6. TEST & COMPETITION INFERENCE"]
+        STAGE2 --> LIVE["src/predictor.py (Direct Inference Pipeline)<br/>- ทำนายภาพเดี่ยว / Batch Folder (500 ภาพข้อสอบ)<br/>- ส่งออก predictions.csv พร้อม TIS-620 Code และค่าความเชื่อมั่น"]
+    end
+
+    style S_DATA fill:#f8f9fa,stroke:#343a40,stroke-width:2px
+    style S_PRE fill:#fff3cd,stroke:#ffc107,stroke-width:2px
+    style S_MODEL fill:#cce5ff,stroke:#004085,stroke-width:2px
+    style S_TRAIN fill:#d4edda,stroke:#155724,stroke-width:2px
+    style S_EVAL fill:#e2e3e5,stroke:#383d41,stroke-width:2px
+    style S_DELIV fill:#f8d7da,stroke:#721c24,stroke-width:2px
 ```
 
 ### จุดเด่นเชิงวิศวกรรม (Key Highlights):
@@ -66,7 +107,7 @@ Solution 2 (Eungul + Ninenine)/
     ├── __init__.py                    # กำหนด Package
     ├── config.py                      # ไฮเปอร์พารามิเตอร์, พาธ, และพจนานุกรมถอดรหัส TIS-620
     ├── dataset.py                     # สแกนข้อมูล, Stratified Split, และ Offline Train Augmentation
-    ├── inference.py                   # คลาส ThaiCharacterPredictor และ Batch Processor
+    ├── predictor.py                   # คลาส ThaiCharacterPredictor และ Batch Processor
     ├── losses.py                      # คำนวณ Class Weights และ Loss Function
     ├── metrics.py                     # คำนวณ Accuracy, Macro-F1, Top-k, Confusion Matrix
     ├── models.py                      # นิยามโมเดล EfficientNet-B0 และฟังก์ชันโหลด Checkpoint
@@ -92,7 +133,7 @@ python inference.py --image "path/to/image.png" --top-k 3
 **ตัวอย่างผลลัพธ์ใน Terminal**:
 ```text
 [*] กำลังโหลด Checkpoint จาก: best_thai_character_finetuned.pth
-[*] โหลดโมเดลสำเร็จ! จำนวนคลาส: 72 | Validation Macro-F1: 0.8722
+[*] โหลดโมเดลสำเร็จ! จำนวนคลาส: 72 | Validation Macro-F1: 0.8990
 
 ============================================================
  ผลการทำนาย: sample_ko_kai.png
@@ -138,7 +179,3 @@ python train.py --data-dir "./data" --batch-size 256 --stage1-epochs 5 --stage2-
 ```
 
 ---
-
-## 👥 ผู้พัฒนา (Contributors)
-- **Solution 2**: Eungul + Ninenine
-- โครงการ: KMITL Deep Learning in Medical Imaging (Project 1 - Thai Character Recognition)
