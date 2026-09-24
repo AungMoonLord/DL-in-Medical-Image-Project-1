@@ -1,12 +1,12 @@
 """
-Inference — ไฟล์ที่ต้องส่งอาจารย์
+Inference — ไฟล์ที่ต้องส่งอาจารย์ (ปรับปรุงการแปลง folder -> class_id)
 
 ใช้งาน:
   python -m src.inference --ckpt outputs/checkpoints/best_model.pth \
       --input path/to/images --output outputs/predictions.csv --tta 5
 
   --input รับได้ทั้ง: ไฟล์ภาพเดียว / โฟลเดอร์ / โฟลเดอร์ซ้อนโฟลเดอร์
-  ถ้าโครงสร้างเป็น <root>/<folder_id>/*.png จะคำนวณ accuracy ให้อัตโนมัติ
+  รองรับโฟลเดอร์ที่เป็น class_id (เช่น 101), folder_id (เช่น 161) หรือตัวอักษรภาษาไทย (เช่น ก)
 """
 from __future__ import annotations
 
@@ -27,6 +27,20 @@ from .models import build_model
 from .transforms import build_tta_transforms, build_val_transform
 from .utils import (IMG_EXTS, amp_dtype_from_str, describe_device, ensure_dir,
                     get_device, load_checkpoint)
+
+# ตารางจับคู่ Folder ID -> Class ID ตาม Project_1-data_dict.txt
+FOLDER_TO_CLASS_ID: dict[int, int] = {
+    161: 101, 162: 102, 163: 103, 164: 104, 167: 105, 168: 106, 169: 107, 170: 108,
+    171: 109, 173: 110, 175: 111, 176: 112, 177: 113, 178: 114, 179: 115, 180: 116,
+    181: 117, 182: 118, 183: 119, 184: 120, 185: 121, 186: 122, 187: 123, 188: 124,
+    189: 125, 190: 126, 191: 127, 192: 128, 193: 129, 194: 130, 195: 131, 196: 132,
+    197: 133, 199: 134, 200: 135, 201: 136, 202: 137, 203: 138, 204: 139, 205: 140,
+    206: 141, 207: 201, 209: 202, 210: 203, 212: 204, 213: 205, 214: 206, 215: 207,
+    216: 208, 217: 209, 224: 210, 225: 211, 226: 212, 227: 213, 228: 214, 229: 215,
+    230: 216, 231: 217, 232: 218, 233: 219, 234: 220, 236: 221, 240: 301, 241: 302,
+    242: 303, 243: 304, 244: 305, 245: 306, 246: 307, 247: 308, 248: 309, 249: 310,
+}
+CLASS_ID_TO_FOLDER: dict[int, int] = {v: k for k, v in FOLDER_TO_CLASS_ID.items()}
 
 
 def collect_images(input_path: str | Path) -> list[Path]:
@@ -58,19 +72,12 @@ class ThaiCharPredictor:
         else:
             self.class_map = ClassMap.load(self.cfg.get_path("paths.class_map"))
 
-        # counts_by_label = np.asarray(self.class_map.counts_by_label())
-        # self.model = build_model(self.cfg, class_counts=counts_by_label).to(self.device)
-        # self.model.load_state_dict(ckpt["model_state"])
-        # self.model.eval()
-
-        # 1. สำเนา config แล้วปิด pretrained=False เพื่อไม่ให้ timm ต่อเน็ตดาวน์โหลด ImageNet ซ้ำตอนสอบ
         infer_cfg = Config(self.cfg.to_dict())
         infer_cfg.set_path("model.pretrained", False)
 
         counts_by_label = np.asarray(self.class_map.counts_by_label())
         self.model = build_model(infer_cfg, class_counts=counts_by_label).to(self.device)
 
-        # 2. ปลด prefix '_orig_mod.' ป้องกัน KeyError กรณี checkpoint ถูกเซฟตอนเปิด torch.compile
         state_dict = ckpt["model_state"]
         state_dict = {k.replace("_orig_mod.", ""): v for k, v in state_dict.items()}
         self.model.load_state_dict(state_dict)
@@ -82,9 +89,7 @@ class ThaiCharPredictor:
         self.tta = max(1, int(tta))
         self.transforms = (build_tta_transforms(self.cfg, self.tta) if self.tta > 1
                            else [build_val_transform(self.cfg)])
-        # เปิด AMP เฉพาะเมื่อรันบน GPU (CUDA) เท่านั้น
         self.amp = bool(self.cfg.get_path("hardware.amp", True)) and (self.device.type == "cuda")
-
         self.amp_dtype = amp_dtype_from_str(
             self.cfg.get_path("hardware.amp_dtype", "bfloat16"))
 
@@ -94,12 +99,9 @@ class ThaiCharPredictor:
         acc_probs = None
         for vi, tf in enumerate(self.transforms):
             ds = InferenceDataset(paths, transform=tf)
-
-            # ---- ส่วนที่แก้ไข (จุดที่ 1.4) ----
             actual_workers = 0 if len(paths) <= 4 else min(num_workers, 8)
             loader = DataLoader(ds, batch_size=batch_size, shuffle=False,
                                 num_workers=actual_workers, pin_memory=(self.device.type == "cuda"))
-            # ---------------------------------
 
             probs_v = []
             desc = f"predict (view {vi+1}/{len(self.transforms)})"
@@ -121,16 +123,23 @@ class ThaiCharPredictor:
 
         rows = []
         for i, path in enumerate(paths):
+            pred_lbl = int(preds[i])
+            folder_id = self.class_map.label_to_folder[pred_lbl]
+            class_id = FOLDER_TO_CLASS_ID.get(folder_id, folder_id)
+
             row = {
                 "filepath": str(path),
-                "pred_label": int(preds[i]),
-                "pred_class": self.class_map.label_to_char[int(preds[i])],
-                "pred_folder_id": self.class_map.label_to_folder[int(preds[i])],
-                "confidence": float(probs[i, preds[i]]),
+                "pred_class_id": class_id,       # ค่า class_id สำหรับส่งตรวจ (เช่น 101)
+                "pred_label": pred_lbl,
+                "pred_class": self.class_map.label_to_char[pred_lbl],
+                "pred_folder_id": folder_id,    # หมายเลข folder เดิม (เช่น 161)
+                "confidence": float(probs[i, pred_lbl]),
             }
             for j in range(k):
                 c = int(topk[i, j])
+                c_folder = self.class_map.label_to_folder[c]
                 row[f"top{j+1}_class"] = self.class_map.label_to_char[c]
+                row[f"top{j+1}_class_id"] = FOLDER_TO_CLASS_ID.get(c_folder, c_folder)
                 row[f"top{j+1}_prob"] = float(probs[i, c])
             rows.append(row)
         return pd.DataFrame(rows)
@@ -142,17 +151,35 @@ class ThaiCharPredictor:
 
 
 def infer_ground_truth(paths: list[Path], class_map: ClassMap) -> list[int] | None:
-    """รองรับทั้งกรณี parent folder เป็น folder_id (161) หรือเป็นตัวอักษรไทย (ก)."""
+    """
+    ดึง Ground Truth จากชื่อโฟลเดอร์แม่:
+    รองรับทั้ง:
+      - class_id (เช่น โฟลเดอร์ 101)
+      - folder_id (เช่น โฟลเดอร์ 161)
+      - ตัวอักษรไทย (เช่น โฟลเดอร์ ก)
+    """
     labels = []
     for p in paths:
         name = p.parent.name
-        if name.isdigit() and int(name) in class_map.folder_to_label:
-            labels.append(class_map.folder_to_label[int(name)])
+        if name.isdigit():
+            val = int(name)
+            # กรณีที่ 1: ชื่อโฟลเดอร์เป็น class_id (101) ให้แปลงเป็น folder_id ก่อน
+            if val in CLASS_ID_TO_FOLDER:
+                fid = CLASS_ID_TO_FOLDER[val]
+                if fid in class_map.folder_to_label:
+                    labels.append(class_map.folder_to_label[fid])
+                    continue
+            # กรณีที่ 2: ชื่อโฟลเดอร์เป็น folder_id ตรงๆ (161)
+            if val in class_map.folder_to_label:
+                labels.append(class_map.folder_to_label[val])
+                continue
+            return None
         elif name in class_map.char_to_label:
             labels.append(class_map.char_to_label[name])
         else:
             return None
     return labels
+
 
 def main() -> None:
     ap = argparse.ArgumentParser(description="ทำนายตัวอักษรไทยจากภาพ")
@@ -181,8 +208,12 @@ def main() -> None:
         from sklearn.metrics import accuracy_score, f1_score
         df["true_label"] = gt
         df["true_class"] = [predictor.class_map.label_to_char[l] for l in gt]
-        df["correct"] = df["pred_label"] == df["true_label"]
-        acc = accuracy_score(gt, df["pred_label"])
+        df["true_folder_id"] = [predictor.class_map.label_to_folder[l] for l in gt]
+        df["true_class_id"] = [FOLDER_TO_CLASS_ID.get(f, f) for f in df["true_folder_id"]]
+        
+        # ตรวจสอบความถูกต้องโดยเทียบ class_id โดยตรง
+        df["correct"] = df["pred_class_id"] == df["true_class_id"]
+        acc = accuracy_score(df["true_class_id"], df["pred_class_id"])
         mf1 = f1_score(gt, df["pred_label"],
                        labels=np.arange(predictor.class_map.num_classes),
                        average="macro", zero_division=0)
@@ -197,6 +228,7 @@ def main() -> None:
         print("\nผลการทำนาย:")
         for _, r in df.iterrows():
             print(f"  {Path(r['filepath']).name:<30} → {r['pred_class']} "
+                  f"(Class ID: {r['pred_class_id']}, Folder: {r['pred_folder_id']}) "
                   f"({r['confidence']*100:.1f}%)")
 
 
