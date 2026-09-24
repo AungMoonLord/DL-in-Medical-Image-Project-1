@@ -14,6 +14,7 @@ Usage from Terminal:
 
 import argparse
 from pathlib import Path
+import re
 import sys
 from typing import Any, Dict, List, Optional, Union
 
@@ -29,13 +30,19 @@ import torch
 from src.config import (
     DEFAULT_CHECKPOINT_PATH,
     DEVICE,
+    FOLDER_TO_CLASS_ID,
     VALID_EXTENSIONS,
     folder_to_char,
+    folder_to_info,
     folder_to_tis620_code,
     resolve_checkpoint_path,
 )
 from src.models import load_model_from_checkpoint
 from src.transforms import get_inference_transforms
+
+
+def natural_sort_key(path):
+    return [int(text) if text.isdigit() else text.lower() for text in re.split(r'(\d+)', path.name)]
 
 
 class ThaiCharacterPredictor:
@@ -77,7 +84,7 @@ class ThaiCharacterPredictor:
     ) -> List[Dict[str, Any]]:
         """
         ทำนายตัวอักษรไทยจากภาพเดี่ยว
-        คืนค่า: รายการ Top-k อันดับ พร้อมตัวอักษรไทย รหัส TIS-620 และระดับความมั่นใจ (%)
+        คืนค่า: รายการ Top-k อันดับ พร้อม folder, class_id, thai_char และ confidence
         """
         if isinstance(image_input, (str, Path)):
             image_path = Path(image_input)
@@ -99,16 +106,15 @@ class ThaiCharacterPredictor:
 
         results: List[Dict[str, Any]] = []
         for rank, index in enumerate(top_indices, start=1):
-            class_name = self.idx_to_class[int(index)]
-            thai_char = folder_to_char(class_name)
-            tis_code = folder_to_tis620_code(class_name)
+            folder = str(self.idx_to_class[int(index)])
+            info = folder_to_info(folder)
             confidence = float(probabilities[index])
 
             results.append({
                 "rank": rank,
-                "class_name": class_name,
-                "tis620_code": tis_code,
-                "thai_char": thai_char,
+                "folder": info["folder"],
+                "class_id": info["class_id"],
+                "thai_char": info["thai_char"],
                 "confidence": confidence,
             })
 
@@ -122,40 +128,37 @@ class ThaiCharacterPredictor:
     ) -> pd.DataFrame:
         """
         ทำนายภาพทั้งหมดภายในโฟลเดอร์ (ค้นหาโฟลเดอร์ย่อยแบบ Recursive)
-        สามารถบันทึกตารางผลลัพธ์เป็นไฟล์ CSV ด้วย encoding 'utf-8-sig' สำหรับเปิดใน Excel
+        จัดเรียงลำดับไฟล์ด้วย Natural Sort (เช่น ts_img_1 ถึง ts_img_500)
+        บันทึกตารางผลลัพธ์เป็นไฟล์ CSV ด้วย 4 คอลัมน์หลักตามรูปแบบของเพื่อนเป๊ะๆ
         """
         folder_path = Path(image_folder)
         if not folder_path.exists():
             raise FileNotFoundError(f"ไม่พบโฟลเดอร์ภาพ: {folder_path.resolve()}")
 
-        image_paths = sorted([
-            path for path in folder_path.rglob("*")
-            if path.is_file() and path.suffix.lower() in VALID_EXTENSIONS
-        ])
+        # จัดเรียงลำดับไฟล์ภาพแบบ Natural Sort เพื่อการันตีว่าลำดับแถว (ts_img_1 ถึง ts_img_500) จะตรงกับ Google Sheet 100%
+        image_paths = sorted(
+            [
+                path for path in folder_path.rglob("*")
+                if path.is_file() and path.suffix.lower() in VALID_EXTENSIONS
+            ],
+            key=natural_sort_key
+        )
 
-        print(f"[*] พบไฟล์ภาพทั้งหมด {len(image_paths)} ภาพ ใน {folder_path.resolve()}")
+        print(f"[*] พบไฟล์ภาพทั้งหมด {len(image_paths)} ภาพ ใน {folder_path.resolve()} (จัดเรียงแบบ Natural Sort)")
 
-        batch_records = []
-        for img_path in image_paths:
-            predictions = self.predict_image(img_path, top_k=top_k)
-            best_pred = predictions[0]
+        batch_results = []
+        for image_path in image_paths:
+            predictions = self.predict_image(image_path, top_k=top_k)
+            best = predictions[0]
 
-            record = {
-                "file_path": str(img_path.resolve()),
-                "file_name": img_path.name,
-                "predicted_class": best_pred["class_name"],
-                "tis620_code": best_pred["tis620_code"],
-                "predicted_char": best_pred["thai_char"],
-                "confidence": best_pred["confidence"],
-            }
-            # เพิ่มคอลัมน์ Top-k เมื่อระบุ top_k > 1
-            for k_rank, pred in enumerate(predictions, start=1):
-                record[f"top{k_rank}_char"] = pred["thai_char"]
-                record[f"top{k_rank}_tis620"] = pred["tis620_code"]
-                record[f"top{k_rank}_confidence"] = pred["confidence"]
-            batch_records.append(record)
+            batch_results.append({
+                "file_path": str(image_path),
+                "predicted_class": best["class_id"],
+                "predicted_char": best["thai_char"],
+                "confidence": best["confidence"],
+            })
 
-        df = pd.DataFrame(batch_records)
+        df = pd.DataFrame(batch_results)
 
         if output_csv is not None:
             csv_path = Path(output_csv)
@@ -167,22 +170,24 @@ class ThaiCharacterPredictor:
 
 
 def print_prediction_table(results: List[Dict[str, Any]], image_name: str = "") -> None:
-    """แสดงตารางผลลัพธ์การทำนาย ตัวอักษรไทย, รหัส TIS-620 และค่า Confidence (%)"""
-    print("\n" + "=" * 60)
+    """แสดงตารางผลลัพธ์การทำนาย Class ID (3 หลัก), ตัวอักษรไทย, โฟลเดอร์เดิม และค่า Confidence (%)"""
+    print("\n" + "=" * 65)
     if image_name:
         print(f" ผลการทำนาย: {image_name}")
     else:
         print(" ผลการทำนายตัวอักษรไทย")
-    print("=" * 60)
-    print(f" {'อันดับ':<6} {'ตัวอักษรไทย':<14} {'รหัส TIS-620':<18} {'ค่า Confidence (%)':<15}")
-    print("-" * 60)
+    print("=" * 65)
+    print(f" {'อันดับ':<6} {'Class ID':<12} {'ตัวอักษรไทย':<14} {'Folder':<10} {'Confidence (%)':<15}")
+    print("-" * 65)
     for res in results:
         rank_str = f"#{res['rank']}"
-        char_str = res['thai_char']
-        tis_str = res['tis620_code']
+        cid_str = str(res.get('class_id', ''))
+        char_str = str(res.get('thai_char', ''))
+        fld_str = str(res.get('folder', ''))
         conf_str = f"{res['confidence'] * 100:.2f}%"
-        print(f" {rank_str:<6} {char_str:<14} {tis_str:<18} {conf_str:<15}")
-    print("=" * 60 + "\n")
+        print(f" {rank_str:<6} {cid_str:<12} {char_str:<14} {fld_str:<10} {conf_str:<15}")
+    print("=" * 65 + "\n")
+
 
 
 def parse_args():
@@ -248,8 +253,8 @@ def main(args=None):
             )
             print(f"[*] ทำนายภาพทั้งหมด {len(df)} ภาพเสร็จสิ้น")
             if not df.empty:
-                print("\n[*] ตัวอย่างผลลัพธ์ 5 แถวแรก:")
-                cols_to_show = [c for c in ["file_name", "predicted_char", "tis620_code", "confidence"] if c in df.columns]
+                print("\n[*] ตัวอย่างผลลัพธ์ 5 แถวแรก (พร้อมสำหรับการคัดลอกลง Google Sheet ช่อง 'กลุ่ม 2'):")
+                cols_to_show = [c for c in ["file_path", "predicted_class", "predicted_char", "confidence"] if c in df.columns]
                 print(df[cols_to_show].head(5).to_string(index=False))
 
     except Exception as e:
