@@ -5,13 +5,22 @@ single-image or batch predictions.
 Maps numeric folder IDs to readable Thai characters and TIS-620 codes.
 
 Usage from Terminal:
+    # Single image:
     python -m src.inference --image "path/to/image.png" --top-k 3
+
+    # Batch folder:
+    python -m src.inference --folder "path/to/folder" --output-csv "predictions.csv"
 """
 
 import argparse
 from pathlib import Path
 import sys
 from typing import Any, Dict, List, Optional, Union
+
+# เพิ่ม project root ใน sys.path เพื่อให้ import src.* ได้อย่างเสถียรทุกรูปแบบการรัน
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent
+if str(_PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(_PROJECT_ROOT))
 
 import pandas as pd
 from PIL import Image
@@ -139,6 +148,11 @@ class ThaiCharacterPredictor:
                 "predicted_char": best_pred["thai_char"],
                 "confidence": best_pred["confidence"],
             }
+            # เพิ่มคอลัมน์ Top-k เมื่อระบุ top_k > 1
+            for k_rank, pred in enumerate(predictions, start=1):
+                record[f"top{k_rank}_char"] = pred["thai_char"]
+                record[f"top{k_rank}_tis620"] = pred["tis620_code"]
+                record[f"top{k_rank}_confidence"] = pred["confidence"]
             batch_records.append(record)
 
         df = pd.DataFrame(batch_records)
@@ -171,13 +185,25 @@ def print_prediction_table(results: List[Dict[str, Any]], image_name: str = "") 
     print("=" * 60 + "\n")
 
 
-if __name__ == "__main__":
+def parse_args():
     parser = argparse.ArgumentParser(description="Thai Character Recognition - Direct Inference")
     parser.add_argument(
         "--image",
         type=str,
-        required=True,
-        help="Path ของไฟล์รูปภาพที่ต้องการทำนาย (เช่น path/to/image.png)"
+        default=None,
+        help="Path ของไฟล์รูปภาพเดี่ยวที่ต้องการทำนาย (เช่น path/to/image.png)"
+    )
+    parser.add_argument(
+        "--folder",
+        type=str,
+        default=None,
+        help="Path ของโฟลเดอร์รูปภาพที่ต้องการทำนายแบบ Batch (ค้นหาไฟล์ภาพแบบ Recursive)"
+    )
+    parser.add_argument(
+        "--output-csv",
+        type=str,
+        default="predictions.csv",
+        help="Path สำหรับบันทึกผลการทำนายแบบ Batch (.csv) (ค่าเริ่มต้น: predictions.csv)"
     )
     parser.add_argument(
         "--top-k",
@@ -189,15 +215,47 @@ if __name__ == "__main__":
         "--checkpoint",
         type=str,
         default=None,
-        help="Path ของโมเดล Checkpoint (ค่าเริ่มต้น: best_thai_character_finetuned.pth)"
+        help="Path ของโมเดล Checkpoint (ค่าเริ่มต้น: ค้นหาอัตโนมัติ เริ่มจาก best_thai_character_finetuned.pth)"
     )
+    return parser.parse_args()
 
-    args = parser.parse_args()
+
+def main(args=None):
+    if args is None:
+        args = parse_args()
+
+    if not args.image and not args.folder:
+        print("[ข้อผิดพลาด]: กรุณาระบุอย่างน้อย 1 อย่างระหว่าง --image (ภาพเดี่ยว) หรือ --folder (โฟลเดอร์ภาพ)", file=sys.stderr)
+        print("ตัวอย่างคำสั่งใช้งาน:", file=sys.stderr)
+        print('  python inference.py --image "path/to/image.png" --top-k 3', file=sys.stderr)
+        print('  python inference.py --folder "path/to/dir" --output-csv "predictions.csv"', file=sys.stderr)
+        sys.exit(1)
 
     try:
         predictor = ThaiCharacterPredictor(checkpoint_path=args.checkpoint)
-        results = predictor.predict_image(args.image, top_k=args.top_k)
-        print_prediction_table(results, image_name=Path(args.image).name)
+
+        # 1. ทำนายภาพเดี่ยว
+        if args.image:
+            results = predictor.predict_image(args.image, top_k=args.top_k)
+            print_prediction_table(results, image_name=Path(args.image).name)
+
+        # 2. ทำนายทั้งโฟลเดอร์ (Batch Folder)
+        if args.folder:
+            df = predictor.predict_batch(
+                image_folder=args.folder,
+                output_csv=args.output_csv,
+                top_k=args.top_k
+            )
+            print(f"[*] ทำนายภาพทั้งหมด {len(df)} ภาพเสร็จสิ้น")
+            if not df.empty:
+                print("\n[*] ตัวอย่างผลลัพธ์ 5 แถวแรก:")
+                cols_to_show = [c for c in ["file_name", "predicted_char", "tis620_code", "confidence"] if c in df.columns]
+                print(df[cols_to_show].head(5).to_string(index=False))
+
     except Exception as e:
         print(f"[ข้อผิดพลาด]: {e}", file=sys.stderr)
         sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()
