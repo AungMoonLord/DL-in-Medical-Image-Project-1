@@ -454,6 +454,14 @@ python -m src.inference --ckpt outputs/checkpoints_finetune/best_model.pth --inp
 # 4. รันบน MacOS (Apple Silicon)
 python -m src.inference --ckpt outputs/checkpoints_finetune/best_model.pth --input test_image/ --output outputs/predictions.csv --tta 5 --device mps
 ```--device cpu
+
+# วิธีลัดสำหรับเครื่องแบม
+py -m src.inference --ckpt outputs/checkpoints_finetune/best_model.pth --input test_image --output outputs/final_evaluation.csv --num-workers 4 --device cuda
+
+
+# วิธีลัดสำหรับเครื่องออง
+py -m src.inference --ckpt outputs/checkpoints_finetune/best_model.pth --input test_image --output outputs/final_evaluation.csv --num-workers 4 --device cpu
+```
 ```
 
 ### พารามิเตอร์ของ `src/inference.py`
