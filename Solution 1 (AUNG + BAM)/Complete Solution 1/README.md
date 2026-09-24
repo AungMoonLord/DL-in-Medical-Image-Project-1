@@ -236,6 +236,12 @@ pip install --upgrade pip
 pip install -r requirements.txt
 ```
 
+### แนะนำใช้วิธีนี้แทน requirement.txt
+```bash
+pip install albumentations timm pandas scikit-learn tqdm numpy
+
+```
+
 จากนั้นเลือกคำสั่งติดตั้ง PyTorch ให้ตรงกับการ์ดจอของคุณ:
 
 ```bash
