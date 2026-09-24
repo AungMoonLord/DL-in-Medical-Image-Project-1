@@ -112,9 +112,28 @@ def main():
     if dataset_root is None:
         raise FileNotFoundError(f"ThaiCharacterDataset not found. Searched: {dataset_candidates}")
 
-    dataset_cleaned = dataset_root / "round2-cleaned"
-    dataset_orig = dataset_root / "round2"
-    active_dataset = dataset_cleaned if dataset_cleaned.exists() else dataset_orig
+    # Check available subfolders
+    dataset_options = [
+        [dataset_root / "dataset-bam", dataset_root / "dataset-pooh", dataset_root / "dataset-ajbank-cleaned"],
+        dataset_root / "dataset-ajbank-cleaned",
+        dataset_root / "dataset-bam-100",
+        dataset_root / "dataset-bam",
+        dataset_root / "dataset-pooh",
+        dataset_root / "round2-cleaned",
+        dataset_root / "round2",
+    ]
+    active_dataset = None
+    for opt in dataset_options:
+        if isinstance(opt, list):
+            if all(p.exists() for p in opt):
+                active_dataset = opt
+                break
+        elif opt.exists():
+            active_dataset = opt
+            break
+
+    if active_dataset is None:
+        raise FileNotFoundError(f"No valid dataset subdirectories found in {dataset_root}")
     
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"🔬 Running Thai Character Benchmarks on {device} (Dataset: {active_dataset})...")
@@ -126,9 +145,11 @@ def main():
     print(f"Loaded Cleaned Dataset Test Split: {len(test_df_clean)} samples.")
 
     checkpoints_to_eval = [
-        ("Solution 3 (CustomGlyphCNN v2 Cleaned)", base_dir / "checkpoints" / "custom_cnn" / "best_model.pt"),
-        ("Solution 3 (CustomGlyphCNN v1)", base_dir / ".." / "ver1" / "checkpoints" / "custom_cnn" / "best_model.pt"),
+        ("Solution 3 (Adapted ResNet-18 ver2)", base_dir / "checkpoints" / "resnet18" / "best_model.pt"),
+        ("Solution 3 (CustomGlyphCNN ver2)", base_dir / "checkpoints" / "custom_cnn" / "best_model.pt"),
+        ("Solution 3 (CustomGlyphCNN ver1)", base_dir / ".." / "ver1" / "checkpoints" / "custom_cnn" / "best_model.pt"),
         ("Solution 2 (EfficientNet-B0)", base_dir / ".." / ".." / "Solution 2 (Eungul + Ninenine)" / "best_thai_character_model.pth"),
+        ("Solution 3 (MobileNetV3 ver2)", base_dir / "checkpoints" / "mobilenet_v3" / "best_model.pt"),
     ]
 
     results = []

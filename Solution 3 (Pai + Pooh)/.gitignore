@@ -20,3 +20,7 @@ desktop.ini
 *.log
 *.tmp
 .pytest_cache/
+
+# Checkpoints
+ver1/checkpoints/
+ver2/checkpoints/

@@ -67,14 +67,13 @@ def invert_glyph_if_needed(img: Image.Image) -> Image.Image:
     - Background is strictly 0 (black / zero-intensity).
     - Character glyph strokes are bright/foreground (>0).
 
-    This ensures standard zero-padding (fill=0) and convolutional networks
-    naturally treat empty margins as 0-valued signal.
+    Optimized for high-throughput batch loading (eliminates slow percentile sort).
     """
     np_img = np.array(img.convert("L"))
     corners = np.array([np_img[0, 0], np_img[0, -1], np_img[-1, 0], np_img[-1, -1]])
     # All raw scans in the dataset have light background (>100) and dark ink strokes (<100).
-    # If corners, mean, or upper percentile indicates a light background document image, invert it.
-    if np.median(corners) > 100 or np.percentile(np_img, 70) > 100 or np.mean(np_img) > 100:
+    # If corners or global mean indicates a light background document image, invert it.
+    if np.median(corners) > 100 or np_img.mean() > 100:
         inverted_np = 255 - np_img
         return Image.fromarray(inverted_np).convert("RGB" if img.mode == "RGB" else "L")
     return img
@@ -287,6 +286,7 @@ class ThaiCharacterDataset(Dataset):
     """
     PyTorch Dataset for Thai Character Glyphs with input inversion,
     optional focal artifact cleaning, and typography pedestal augmentation.
+    Supports high-speed in-RAM caching for massive datasets (e.g. 300k+ images).
     """
 
     def __init__(
@@ -297,6 +297,7 @@ class ThaiCharacterDataset(Dataset):
         use_focal_cleaner: bool = False,
         use_pedestal_aug: bool = False,
         pad_ratio: float = 0.10,
+        cache_in_ram: bool = False,
     ):
         self.df = dataframe.reset_index(drop=True)
         self.target_size = target_size
@@ -304,36 +305,57 @@ class ThaiCharacterDataset(Dataset):
         self.pad_ratio = pad_ratio
         self.focal_cleaner = FocalElementCleaner() if use_focal_cleaner else None
         self.pedestal_aug = PedestalAugmentation(p=0.5) if use_pedestal_aug else None
+        self.cache_in_ram = cache_in_ram
+
+        self.labels = np.array(self.df["class_idx"].values, dtype=np.int64)
+        self.class_numbers = np.array(self.df["class_number"].values, dtype=np.int64)
+        self.cached_images: Optional[np.ndarray] = None
+
+        if self.cache_in_ram:
+            import time
+            n_samples = len(self.df)
+            print(f"[CACHE] Pre-caching {n_samples:,} images into RAM ({target_size[0]}x{target_size[1]} uint8)...")
+            t_start = time.time()
+            self.cached_images = np.zeros((n_samples, target_size[1], target_size[0]), dtype=np.uint8)
+
+            for idx, row in enumerate(self.df.itertuples()):
+                img = Image.open(row.filepath).convert("RGB")
+                img = invert_glyph_if_needed(img)
+                if self.focal_cleaner is not None:
+                    img = self.focal_cleaner.clean(img)
+                letterboxed = letterbox_pad(img, target_size=self.target_size, pad_ratio=self.pad_ratio, fill_color=(0, 0, 0))
+                self.cached_images[idx] = np.array(letterboxed.convert("L"), dtype=np.uint8)
+
+            elapsed = time.time() - t_start
+            mem_mb = self.cached_images.nbytes / (1024 * 1024)
+            print(f"[CACHE] RAM caching complete: {n_samples:,} images in {elapsed:.1f}s ({mem_mb:.1f} MB RAM). Training throughput is now at maximum speed.")
 
     def __len__(self) -> int:
         return len(self.df)
 
     def __getitem__(self, idx: int) -> Tuple[torch.Tensor, int, int]:
-        row = self.df.iloc[idx]
-        img_path = row["filepath"]
-        class_idx = int(row["class_idx"])
-        class_number = int(row["class_number"])
+        class_idx = int(self.labels[idx])
+        class_number = int(self.class_numbers[idx])
 
-        img = Image.open(img_path).convert("RGB")
-
-        # Invert first thing: background = 0 (black), glyph strokes = 255 (bright)
-        img = invert_glyph_if_needed(img)
-
-        # Optional Focal Element Artifact Cleaning (operates on 0-background)
-        if self.focal_cleaner is not None:
-            img = self.focal_cleaner.clean(img)
+        if self.cached_images is not None:
+            arr = self.cached_images[idx]
+            img = Image.fromarray(arr).convert("RGB")
+        else:
+            row = self.df.iloc[idx]
+            img = Image.open(row["filepath"]).convert("RGB")
+            img = invert_glyph_if_needed(img)
+            if self.focal_cleaner is not None:
+                img = self.focal_cleaner.clean(img)
+            img = letterbox_pad(img, target_size=self.target_size, pad_ratio=self.pad_ratio, fill_color=(0, 0, 0))
 
         # Optional Pedestal Augmentation for ญ (173) and ฐ (176)
         if self.pedestal_aug is not None and class_number in (173, 176):
             img = self.pedestal_aug(img, class_number=class_number)
 
-        # Letterbox pad to target square size with zero padding (0, 0, 0)
-        letterboxed = letterbox_pad(img, target_size=self.target_size, pad_ratio=self.pad_ratio, fill_color=(0, 0, 0))
-
         if self.transform:
-            tensor = self.transform(letterboxed)
+            tensor = self.transform(img)
         else:
-            tensor = get_val_transform()(letterboxed)
+            tensor = get_val_transform()(img)
 
         return tensor, class_idx, class_number
 
@@ -349,6 +371,7 @@ def build_dataloaders(
     use_focal_cleaner: bool = False,
     use_pedestal_aug: bool = True,
     use_auto_reject: bool = False,
+    cache_in_ram: bool = False,
 ) -> Tuple[DataLoader, DataLoader, Dict[int, int], pd.DataFrame, pd.DataFrame]:
     """
     Constructs train and test DataLoaders with zero data leakage.
@@ -371,6 +394,7 @@ def build_dataloaders(
         transform=train_transform,
         use_focal_cleaner=use_focal_cleaner,
         use_pedestal_aug=use_pedestal_aug,
+        cache_in_ram=cache_in_ram,
     )
 
     test_dataset = ThaiCharacterDataset(
@@ -379,7 +403,10 @@ def build_dataloaders(
         transform=val_transform,
         use_focal_cleaner=use_focal_cleaner,
         use_pedestal_aug=False,
+        cache_in_ram=cache_in_ram,
     )
+
+    persistent = num_workers > 0
 
     if use_balanced_sampler:
         class_counts = Counter(train_df["class_idx"])
@@ -393,6 +420,7 @@ def build_dataloaders(
             sampler=sampler,
             num_workers=num_workers,
             pin_memory=torch.cuda.is_available(),
+            persistent_workers=persistent,
         )
     else:
         train_loader = DataLoader(
@@ -401,6 +429,7 @@ def build_dataloaders(
             shuffle=True,
             num_workers=num_workers,
             pin_memory=torch.cuda.is_available(),
+            persistent_workers=persistent,
         )
 
     test_loader = DataLoader(
@@ -409,6 +438,7 @@ def build_dataloaders(
         shuffle=False,
         num_workers=num_workers,
         pin_memory=torch.cuda.is_available(),
+        persistent_workers=persistent,
     )
 
     return train_loader, test_loader, class_to_idx, train_df, test_df
