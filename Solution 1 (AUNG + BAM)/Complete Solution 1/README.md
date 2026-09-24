@@ -456,11 +456,11 @@ python -m src.inference --ckpt outputs/checkpoints_finetune/best_model.pth --inp
 ```--device cpu
 
 # วิธีลัดสำหรับเครื่องแบม
-py -m src.inference --ckpt outputs/checkpoints_finetune/best_model.pth --input test_image --output outputs/final_evaluation.csv --num-workers 4 --device cuda
+py -m src.inference --ckpt outputs/checkpoints_finetune/best_model.pth --input test_image --output outputs/final_evaluation.csv --num-workers 4 --device cuda --tta 5
 
 
 # วิธีลัดสำหรับเครื่องออง
-py -m src.inference --ckpt outputs/checkpoints_finetune/best_model.pth --input test_image --output outputs/final_evaluation.csv --num-workers 4 --device cpu
+py -m src.inference --ckpt outputs/checkpoints_finetune/best_model.pth --input test_image --output outputs/final_evaluation.csv --num-workers 4 --device cpu --tta 3
 ```
 ```
 
