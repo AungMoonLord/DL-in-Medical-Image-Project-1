@@ -460,7 +460,7 @@ py -m src.inference --ckpt outputs/checkpoints_finetune/best_model.pth --input t
 
 
 # วิธีลัดสำหรับเครื่องออง
-py -m src.inference --ckpt outputs/checkpoints_finetune/best_model.pth --input test_image --output outputs/final_evaluation.csv --num-workers 4 --device cpu --tta 3
+py -m src.inference --ckpt outputs/checkpoints_finetune/best_model.pth --input test_image --output outputs/final_evaluation.csv --num-workers 4 --device cpu --tta 5
 ```
 ```
 
