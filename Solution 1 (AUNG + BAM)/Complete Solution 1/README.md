@@ -437,23 +437,17 @@ test_image/
 
 ```bash
 # 1. ทำนายภาพทั้งโฟลเดอร์ + เปิด TTA 5 Views (แม่นยำสูงสุดสำหรับส่งตรวจ)
-python -m src.inference \
-    --ckpt outputs/checkpoints/best_model.pth \
-    --input path/to/teacher_test_images/ \
-    --output outputs/predictions.csv \
-    --tta 5
+py -m src.inference --ckpt outputs/checkpoints_finetune/best_model.pth --input test_image/ --output outputs/predictions.csv --tta 5 --device cuda
 
 # 2. ทำนายด่วนภาพเดี่ยว (ข้าม Overhead ของ Multiprocessing)
-python -m src.inference \
-    --ckpt outputs/checkpoints/best_model.pth \
-    --input path/to/sample.png \
-    --num-workers 0
+python -m src.inference --ckpt outputs/checkpoints_finetune/best_model.pth --input path/to/sample.png --num-workers 0
 
 # 3. รันบนเครื่องที่ไม่มีการ์ดจอ (CPU Mode)
-python -m src.inference \
-    --ckpt outputs/checkpoints/best_model.pth \
-    --input path/to/images/ \
-    --device cpu
+py -m src.inference --ckpt outputs/checkpoints_finetune/best_model.pth --input test_image/ --output outputs/predictions.csv --tta 5 --device cpu
+
+# 4. รันบน MacOS (Apple Silicon)
+py -m src.inference --ckpt outputs/checkpoints_finetune/best_model.pth --input test_image/ --output outputs/predictions.csv --tta 5 --device mps
+```--device cpu
 ```
 
 ### พารามิเตอร์ของ `src/inference.py`
