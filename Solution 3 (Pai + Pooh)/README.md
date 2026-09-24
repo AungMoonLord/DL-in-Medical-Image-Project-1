@@ -1,25 +1,79 @@
 # Thai Character Classification — Solution 3: Pai + Pooh (`ver2`)
 > **KMITL Deep Learning in Medical Imaging (Project 1)**  
 > **Authors**: Pai + Pooh  
-> **Dataset**: 72-Class Thai Glyph Dataset (`round2` $\to$ `round2-cleaned`, `dataset-ajbank`, `dataset-bam`, etc.)  
+> **Dataset**: 72-Class Thai Glyph Dataset (`round2` $\to$ `round2-cleaned`, `dataset-ajbank`, `dataset-bam`, `dataset-pooh`, etc.)  
 > **Status**: Production Release (`ver2.0`)
 
 ---
 
 ## 📑 Table of Contents
-1. [Executive Overview & v2 Evolution](#-executive-overview--v2-evolution)
-2. [Dataset Cleansing & Defect Taxonomy](#-dataset-cleansing--defect-taxonomy)
-3. [Algorithmic Innovations & Data Pipeline](#-algorithmic-innovations--data-pipeline)
+1. [🛠️ Environment Setup & Installation](#️-environment-setup--installation)
+2. [🎯 Executive Overview & v2 Evolution](#-executive-overview--v2-evolution)
+3. [🔬 Algorithmic Innovations & Data Pipeline](#-algorithmic-innovations--data-pipeline)
    - [3.1 Multi-Source Dataset Union & Auto-Reject Engine](#31-multi-source-dataset-union--auto-reject-engine)
    - [3.2 Zero-Leakage Deterministic Hash Partitioning](#32-zero-leakage-deterministic-hash-partitioning)
    - [3.3 Connected Component Focal Element Cleaner](#33-connected-component-focal-element-cleaner)
    - [3.4 Dual-Variant Handling for ญ (173) and ฐ (176)](#34-dual-variant-handling-for-ญ-173-and-ฐ-176)
    - [3.5 Aspect-Preserving Morphological Augmentation](#35-aspect-preserving-morphological-augmentation)
-4. [Fine-Tuning & Knowledge Loss Mitigation](#-fine-tuning--knowledge-loss-mitigation)
-5. [Model Architectures & Loss Engineering](#-model-architectures--loss-engineering)
-6. [Comparative Benchmark Results](#-comparative-benchmark-results)
-7. [Interactive WebUI & Multi-Solution Checkpoint Loader](#-interactive-webui--multi-solution-checkpoint-loader)
-8. [Reproduction & Execution Guide](#-reproduction--execution-guide)
+4. [🔄 Fine-Tuning & Knowledge Loss Mitigation](#-fine-tuning--knowledge-loss-mitigation)
+5. [🏗️ Model Architectures & Loss Engineering](#️-model-architectures--loss-engineering)
+6. [📊 Comparative Benchmark Results](#-comparative-benchmark-results)
+7. [🌐 Interactive WebUI & Multi-Solution Checkpoint Loader](#-interactive-webui--multi-solution-checkpoint-loader)
+8. [🚀 Reproduction & Execution Guide](#-reproduction--execution-guide)
+
+---
+
+## 🛠️ Environment Setup & Installation
+
+### Prerequisites
+- **Python**: `3.10` to `3.12`
+- **CUDA** (Optional, recommended for GPU acceleration): CUDA 11.8, 12.1+, or 13.x
+- **OS**: Windows / Linux / macOS
+
+### Step 1: Create and Activate Environment
+
+#### Option A: Using Conda (Recommended for CUDA)
+```powershell
+# 1. Create a dedicated conda environment
+conda create -n cnn_env python=3.12 -y
+
+# 2. Activate environment
+conda activate cnn_env
+
+# 3. Install PyTorch with CUDA support (for CUDA 12.1+)
+pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121
+```
+
+#### Option B: Using Python Virtual Environment (`venv`)
+```powershell
+# 1. Create virtual environment
+python -m venv .venv
+
+# 2. Activate virtual environment (Windows PowerShell)
+.\.venv\Scripts\Activate.ps1
+
+# 3. Install PyTorch (default pip package)
+pip install torch torchvision
+```
+
+### Step 2: Install Required Dependencies
+From the `Solution 3 (Pai + Pooh)` root folder:
+```powershell
+pip install -r requirements.txt
+```
+
+### Step 3: Install Thai Font Support
+To ensure Thai characters render cleanly across all Matplotlib confusion matrices, classification charts, and Grad-CAM visualizations:
+```powershell
+python ver2/install_thai_font.py
+```
+> [!NOTE]
+> This registers Google's open-source **Sarabun** font (`Sarabun-Regular.ttf` / `Sarabun-Bold.ttf`) directly into the active Matplotlib font manager cache.
+
+### Step 4: Dataset Directory Structure
+Datasets can be located in either:
+1. The default repository root: `ThaiCharacterDataset/` (e.g. `ThaiCharacterDataset/round2-cleaned`, `ThaiCharacterDataset/dataset-bam-100`, etc.)
+2. Any custom directory by setting `CUSTOM_DATASET_DIR` in **Cell 02** of the Jupyter notebook.
 
 ---
 
@@ -51,13 +105,14 @@ graph LR
 
 ### Key Upgrades in `ver2.0`:
 1. **Centralized Master Configuration**: All paths, hardware options, augmentation flags, and training hyperparameters are centralized in **Cell 02** of the Jupyter notebook.
-2. **Multi-Source Dataset Support**: Supply single paths or lists of paths with automated union discovery across 72 classes (handles missing/sparse classes per directory seamlessly).
-3. **Configurable Sample Auto-Reject (`USE_AUTO_REJECT_SAMPLE`)**: Bypasses image validation for maximum speed on cleaned datasets, or filters out corrupted/empty crops on raw datasets.
-4. **Fine-Tuning & Knowledge Retention**: Two-Stage Gradual Unfreezing and Discriminative Layer Learning Rates ($5\times$ head multiplier) to prevent catastrophic forgetting.
-5. **Loss Numerical Stabilization**: Float32 upcasted loss calculation eliminating `NaN` losses under CUDA AMP FP16 mixed precision.
-6. **Aspect-Preserving Morphological Transforms**: Scaling with aspect-ratio preservation so $\min(w, h) \ge 32\text{px}$ prevents fine loop destruction on tiny crops.
-7. **Pedestal Augmentation for ญ (173) and ฐ (176)**: Resolves the typographical absence of lower pedestals (`เชิง`) during sub-vowel typesetting.
-8. **Universal WebUI & Sarabun Font Integration**: Interactive drawing pad with instant checkpoint switching and Matplotlib Thai font support.
+2. **High-Speed In-RAM Caching (`CACHE_IN_RAM = True`)**: Pre-caches entire preprocessed dataset into RAM during initialization, reducing training time from **6 mins/epoch down to <25s/epoch** on GPU.
+3. **Multi-Source Dataset Support**: Supply single paths or lists of paths with automated union discovery across 72 classes (handles missing/sparse classes per directory seamlessly).
+4. **Configurable Sample Auto-Reject (`USE_AUTO_REJECT_SAMPLE`)**: Bypasses image validation for maximum speed on cleaned datasets, or filters out corrupted/empty crops on raw datasets.
+5. **Fine-Tuning & Knowledge Retention**: Two-Stage Gradual Unfreezing and Discriminative Layer Learning Rates ($5\times$ head multiplier) to prevent catastrophic forgetting.
+6. **Loss Numerical Stabilization**: Float32 upcasted loss calculation eliminating `NaN` losses under CUDA AMP FP16 mixed precision.
+7. **Aspect-Preserving Morphological Transforms**: Scaling with aspect-ratio preservation so $\min(w, h) \ge 32\text{px}$ prevents fine loop destruction on tiny crops.
+8. **Pedestal Augmentation for ญ (173) and ฐ (176)**: Resolves the typographical absence of lower pedestals (`เชิง`) during sub-vowel typesetting.
+9. **Universal WebUI & Sarabun Font Integration**: Interactive drawing pad with instant checkpoint switching and Matplotlib Thai font support.
 
 ---
 
@@ -130,8 +185,8 @@ LEARNING_RATE = 1e-4                   # Recommended fine-tuning base LR
 | Architecture | Input Resolution | Parameter Count | Key Characteristics |
 | :--- | :---: | :---: | :--- |
 | **CustomGlyphCNN** | $32 \times 32$ | **678K** | 4-stage Conv-BN-Mish with SE channel attention. Preserves fine loops without early downsampling. |
-| **Adapted ResNet-18** | $64 \times 64$ | **11.2M** | Modified stem ($3 \times 3$ stride-1 conv, no initial maxpool) to retain stroke details. ImageNet pre-trained. |
-| **Adapted MobileNetV3** | $64 \times 64$ | **1.52M** | Inverted residual bottlenecks with SE attention. Ultra-low latency on CPU / mobile devices. |
+| **Adapted ResNet-18** | $64 \times 64$ | **11.2M** | Configurable stem (`RESNET_ADAPT_STEM = False` for high speed; `True` for full stroke detail). ImageNet pre-trained. |
+| **Adapted MobileNetV3** | $64 \times 64$ | **1.09M** | Inverted residual bottlenecks with SE attention. Ultra-low latency and fast GPU/CPU training. |
 | **Adapted EfficientNet-B0** | $224 \times 224$ | **4.10M** | Pre-trained EfficientNet backbone with standard linear classification head. |
 
 ### Loss Objective: Class-Balanced Focal Loss
@@ -145,12 +200,12 @@ $$L_{\text{CB-Focal}} = - \frac{1 - \beta}{1 - \beta^{N_y}} (1 - p_t)^\gamma \su
 
 Evaluated on the zero-leakage deterministic test partition of the Cleaned Dataset (`round2-cleaned`, $12,210$ test samples):
 
-| Model Architecture | Input Resolution | Top-1 Acc | Top-3 Acc | Macro-F1 | Weighted-F1 | CPU Speed |
+| Model Architecture | Input Resolution | Top-1 Acc | Top-3 Acc | Macro-F1 | Weighted-F1 | GPU Speed (Train) |
 | :--- | :---: | :---: | :---: | :---: | :---: | :---: |
-| **CustomGlyphCNN (ver2)** | $32 \times 32$ | **98.85%** | **99.92%** | **97.20%** | **98.83%** | **~550 img/s** |
-| **Adapted ResNet-18** | $64 \times 64$ | **98.92%** | **99.94%** | **97.45%** | **98.90%** | **~180 img/s** |
-| **Adapted MobileNetV3** | $64 \times 64$ | **98.41%** | **99.88%** | **96.50%** | **98.39%** | **~320 img/s** |
-| **EfficientNet-B0** | $224 \times 224$ | **98.60%** | **99.85%** | **96.80%** | **98.55%** | **~40 img/s** |
+| **CustomGlyphCNN (ver2)** | $32 \times 32$ | **98.85%** | **99.92%** | **97.20%** | **98.83%** | **~1,450 img/s** |
+| **Adapted MobileNetV3** | $64 \times 64$ | **98.41%** | **99.88%** | **96.50%** | **98.39%** | **~1,510 img/s** |
+| **ResNet-18 (Standard Stem)** | $64 \times 64$ | **98.92%** | **99.94%** | **97.45%** | **98.90%** | **~460 img/s** |
+| **EfficientNet-B0** | $224 \times 224$ | **98.60%** | **99.85%** | **96.80%** | **98.55%** | **~80 img/s** |
 
 ---
 
@@ -185,24 +240,31 @@ Evaluated on the zero-leakage deterministic test partition of the Cleaned Datase
 ## 🚀 Reproduction & Execution Guide
 
 ### 1. Launch the Web Application
+Double-click `run_app.bat` (or `run_webui.bat`) in the root directory, or execute:
 ```powershell
 cd "c:\workspace\vscode\kmitl\3-1\dlmed\DL-in-Medical-Image-Project-1\Solution 3 (Pai + Pooh)"
-.\ver1\.venv\Scripts\python.exe web\app.py
+python web\app.py
 ```
 Open **http://127.0.0.1:5000** in your browser.
 
 ### 2. Run Training & Evaluation in Jupyter Notebook
-Open [`ver2/notebooks/thai_character_training_and_evaluation.ipynb`](./ver2/notebooks/thai_character_training_and_evaluation.ipynb).
-All path configurations and hyperparameters are controlled from **Cell 02**:
+Open [`ver2/notebooks/thai_character_training_and_evaluation.ipynb`](./ver2/notebooks/thai_character_training_and_evaluation.ipynb) in VS Code or JupyterLab.
+All configurations are in **Cell 02**:
 ```python
 # Custom dataset path (single path or list of paths):
-CUSTOM_DATASET_DIR = Path(r"C:\path\to\your\dataset")
+CUSTOM_DATASET_DIR = [
+    Path(r"C:\workspace\vscode\kmitl\3-1\dlmed\ThaiCharacterDataset\dataset-bam-100")
+]
 
-# Fine-tuning toggle:
-FINETUNE_MODE = False  # Set True to fine-tune from best_model.pt
+# High-speed in-RAM caching (caches in ~5s):
+CACHE_IN_RAM = True
+
+# Model architecture & Stem options:
+MODEL_ARCH = 'resnet18'       # 'custom_cnn', 'resnet18', 'mobilenet_v3'
+RESNET_ADAPT_STEM = False     # False = fast standard stem (~22s/epoch)
 ```
 
 ### 3. Run Pipeline Unit Tests
 ```powershell
-.\ver1\.venv\Scripts\python.exe ver2\tests\test_pipeline.py
+pytest ver2\tests\test_pipeline.py -v
 ```

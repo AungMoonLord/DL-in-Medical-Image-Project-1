@@ -14,7 +14,7 @@ import base64
 import io
 import os
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
 
 import numpy as np
 from PIL import Image
@@ -111,7 +111,7 @@ THAI_CHAR_METADATA: Dict[int, Dict[str, str]] = {
 class UniversalModelLoader:
     """
     Introspects checkpoint weights to dynamically construct the matching architecture
-    and resolution.
+    and resolution with zero configuration mismatch.
     """
 
     @staticmethod
@@ -119,61 +119,102 @@ class UniversalModelLoader:
         checkpoint_path: Union[str, Path],
         device: torch.device,
         num_classes: int = 72,
-    ) -> Tuple[nn.Module, str, int, Optional[Dict[str, int]]]:
+    ) -> Tuple[nn.Module, str, int, Optional[Dict[int, int]]]:
         """
         Loads checkpoint and detects architecture:
         Returns: (model, model_type, target_resolution, custom_class_to_idx)
         """
         ckpt_path = Path(checkpoint_path)
+        if not ckpt_path.exists():
+            raise FileNotFoundError(f"Checkpoint file not found: {ckpt_path}")
+
         try:
             loaded = torch.load(ckpt_path, map_location=device, weights_only=False)
         except TypeError:
             loaded = torch.load(ckpt_path, map_location=device)
+
         state_dict = loaded
         custom_class_map = None
-        target_res = 32
+        target_res = None
+        detected_num_classes = num_classes
+        arch_hint = None
 
         if isinstance(loaded, dict):
-            if "class_to_idx" in loaded:
+            arch_hint = loaded.get("model_arch") or loaded.get("model_name") or loaded.get("arch")
+            if arch_hint:
+                arch_hint = str(arch_hint).lower().strip()
+
+            if "class_to_idx" in loaded and isinstance(loaded["class_to_idx"], dict):
                 custom_class_map = {int(k) if str(k).isdigit() else k: int(v) for k, v in loaded["class_to_idx"].items()}
+            elif "idx_to_class" in loaded and isinstance(loaded["idx_to_class"], dict):
+                custom_class_map = {int(v) if str(v).isdigit() else v: int(k) for k, v in loaded["idx_to_class"].items()}
+
+            if "num_classes" in loaded:
+                detected_num_classes = int(loaded["num_classes"])
+            elif custom_class_map:
+                detected_num_classes = len(custom_class_map)
+
             if "image_size" in loaded:
                 target_res = int(loaded["image_size"])
+            elif "target_res" in loaded:
+                target_res = int(loaded["target_res"])
+
             if "model_state_dict" in loaded:
                 state_dict = loaded["model_state_dict"]
             elif "state_dict" in loaded:
                 state_dict = loaded["state_dict"]
-
-        keys = list(state_dict.keys())
-        first_keys = " ".join(keys[:10])
-
-        # Architecture detection heuristics
-        if any("stage1" in k for k in keys):
-            model_type = "custom_cnn"
-            model = CustomGlyphCNN(num_classes=num_classes)
-            target_res = 32
-        elif any("layer1" in k for k in keys):
-            model_type = "resnet18"
-            model = AdaptedResNet18(num_classes=num_classes, pretrained=False)
-            target_res = 64
-        elif any("features.1.0.block" in k for k in keys) or "features.0.0.weight" in state_dict:
-            model_type = "efficientnet_b0"
-            model = AdaptedEfficientNetB0(num_classes=num_classes, pretrained=False)
-            target_res = target_res if target_res != 32 else 224
-        elif any("classifier.1" in k and "features" in k for k in keys):
-            model_type = "mobilenet_v3"
-            model = AdaptedMobileNetV3(num_classes=num_classes, pretrained=False)
-            target_res = 64
-        else:
-            # Default to Custom CNN
-            model_type = "custom_cnn"
-            model = CustomGlyphCNN(num_classes=num_classes)
-            target_res = 32
 
         # Clean state dict prefixes if wrapped in DDP / module
         clean_sd = {}
         for k, v in state_dict.items():
             clean_k = k.replace("module.", "").replace("model.", "")
             clean_sd[clean_k] = v
+
+        keys = list(clean_sd.keys())
+
+        # Auto-detect num_classes from output head if possible
+        if "classifier.6.weight" in clean_sd:
+            detected_num_classes = clean_sd["classifier.6.weight"].shape[0]
+        elif "classifier.4.weight" in clean_sd:
+            detected_num_classes = clean_sd["classifier.4.weight"].shape[0]
+        elif "classifier.1.weight" in clean_sd:
+            detected_num_classes = clean_sd["classifier.1.weight"].shape[0]
+
+        # Architecture detection heuristics
+        if arch_hint in ("custom_cnn", "customglyphcnn", "glyph_cnn") or any("stage1" in k for k in keys):
+            model_type = "custom_cnn"
+            model = CustomGlyphCNN(num_classes=detected_num_classes)
+            target_res = target_res or 32
+
+        elif arch_hint in ("resnet18", "resnet_18", "adapted_resnet18") or \
+             any("features.4.0.conv1" in k for k in keys) or \
+             any("layer1" in k for k in keys) or \
+             ("classifier.2.weight" in clean_sd and clean_sd["classifier.2.weight"].shape[1] == 512):
+            model_type = "resnet18"
+            stem_k = "features.0.weight" if "features.0.weight" in clean_sd else ("conv1.weight" if "conv1.weight" in clean_sd else None)
+            adapt_stem = (clean_sd[stem_k].shape[-1] == 3) if stem_k and stem_k in clean_sd else False
+            model = AdaptedResNet18(num_classes=detected_num_classes, pretrained=False, adapt_stem=adapt_stem)
+            target_res = target_res or 64
+
+        elif arch_hint in ("efficientnet_b0", "efficientnet", "effnet_b0", "solution2") or \
+             any("features.1.0.block" in k for k in keys) or \
+             ("classifier.1.weight" in clean_sd and clean_sd["classifier.1.weight"].shape[1] == 1280):
+            model_type = "efficientnet_b0"
+            model = AdaptedEfficientNetB0(num_classes=detected_num_classes, pretrained=False)
+            target_res = target_res or 224
+
+        elif arch_hint in ("mobilenet_v3", "mobilenetv3", "adapted_mobilenet") or \
+             any("features.1.block" in k for k in keys) or \
+             ("classifier.1.weight" in clean_sd and clean_sd["classifier.1.weight"].shape[0] == 256):
+            model_type = "mobilenet_v3"
+            model = AdaptedMobileNetV3(num_classes=detected_num_classes, pretrained=False)
+            target_res = target_res or 64
+
+        else:
+            # Fallback to Custom CNN
+            model_type = "custom_cnn"
+            model = CustomGlyphCNN(num_classes=detected_num_classes)
+            target_res = target_res or 32
 
         try:
             model.load_state_dict(clean_sd, strict=True)
@@ -187,19 +228,45 @@ class UniversalModelLoader:
 class ThaiCharacterInferenceEngine:
     """
     ver2 Unified Inference Engine supporting multi-solution checkpoints,
-    configurable letterbox padding, focal artifact cleaning, and Top-K predictions.
+    configurable letterbox padding, focal artifact cleaning, Top-K predictions,
+    and batch evaluation.
     """
 
-    def __init__(self, dataset_dir: Union[str, Path], device: Optional[torch.device] = None):
-        self.dataset_dir = Path(dataset_dir)
+    def __init__(
+        self,
+        dataset_dir: Optional[Union[str, Path, Sequence[Union[str, Path]]]] = None,
+        device: Optional[torch.device] = None,
+    ):
+        self.dataset_dir = dataset_dir
         self.device = device or torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.models: Dict[str, nn.Module] = {}
         self.model_configs: Dict[str, Dict[str, Any]] = {}
         self.val_transform = get_val_transform()
         self.focal_cleaner = FocalElementCleaner()
 
-        # Build baseline class index lookup
-        _, _, self.class_to_idx = build_split_dataframes(self.dataset_dir, train_ratio=0.8)
+        # Fast discovery of class mapping without slow recursive disk scanning
+        if self.dataset_dir:
+            try:
+                roots = [Path(p) for p in (self.dataset_dir if isinstance(self.dataset_dir, (list, tuple)) else [self.dataset_dir])]
+                classes = set()
+                for root in roots:
+                    if root.exists():
+                        for d in root.iterdir():
+                            if d.is_dir() and d.name.isdigit():
+                                classes.add(int(d.name))
+                if classes:
+                    sorted_classes = sorted(list(classes))
+                    self.class_to_idx = {c: i for i, c in enumerate(sorted_classes)}
+                else:
+                    sorted_classes = sorted(list(THAI_CHAR_METADATA.keys()))
+                    self.class_to_idx = {c: i for i, c in enumerate(sorted_classes)}
+            except Exception:
+                sorted_classes = sorted(list(THAI_CHAR_METADATA.keys()))
+                self.class_to_idx = {c: i for i, c in enumerate(sorted_classes)}
+        else:
+            sorted_classes = sorted(list(THAI_CHAR_METADATA.keys()))
+            self.class_to_idx = {c: i for i, c in enumerate(sorted_classes)}
+
         self.idx_to_class = {idx: num for num, idx in self.class_to_idx.items()}
         self.num_classes = len(self.class_to_idx)
 
@@ -228,8 +295,9 @@ class ThaiCharacterInferenceEngine:
         self,
         image_input: Union[Image.Image, np.ndarray, str, bytes],
         target_size: Tuple[int, int] = (32, 32),
-        pad_ratio: float = 0.15,
+        pad_ratio: float = 0.05,
         use_focal_cleaner: bool = False,
+        autocrop: bool = True,
     ) -> Tuple[torch.Tensor, Image.Image, Image.Image]:
         """
         Preprocesses various image formats:
@@ -259,20 +327,23 @@ class ThaiCharacterInferenceEngine:
             pil_img = self.focal_cleaner.clean(pil_img)
 
         # 3. Autocrop to bounding box of bright foreground content
-        np_img = np.array(pil_img)
-        gray = np.mean(np_img, axis=2) if np_img.ndim == 3 else np_img
-        coords = np.argwhere(gray > 30)
+        if autocrop:
+            np_img = np.array(pil_img)
+            gray = np.mean(np_img, axis=2) if np_img.ndim == 3 else np_img
+            coords = np.argwhere(gray > 30)
 
-        if len(coords) > 10:
-            y0, x0 = coords.min(axis=0)
-            y1, x1 = coords.max(axis=0) + 1
-            # Add safety margin
-            pad_px = max(2, int(min(pil_img.width, pil_img.height) * 0.03))
-            x0 = max(0, x0 - pad_px)
-            y0 = max(0, y0 - pad_px)
-            x1 = min(pil_img.width, x1 + pad_px)
-            y1 = min(pil_img.height, y1 + pad_px)
-            cropped_glyph = pil_img.crop((x0, y0, x1, y1))
+            if len(coords) > 10:
+                y0, x0 = coords.min(axis=0)
+                y1, x1 = coords.max(axis=0) + 1
+                # Add safety margin
+                pad_px = max(2, int(min(pil_img.width, pil_img.height) * 0.03))
+                x0 = max(0, x0 - pad_px)
+                y0 = max(0, y0 - pad_px)
+                x1 = min(pil_img.width, x1 + pad_px)
+                y1 = min(pil_img.height, y1 + pad_px)
+                cropped_glyph = pil_img.crop((x0, y0, x1, y1))
+            else:
+                cropped_glyph = pil_img
         else:
             cropped_glyph = pil_img
 
@@ -287,11 +358,12 @@ class ThaiCharacterInferenceEngine:
         image_input: Union[Image.Image, np.ndarray, str, bytes],
         model_name: str = "custom_cnn",
         top_k: int = 5,
-        pad_ratio: float = 0.15,
+        pad_ratio: float = 0.05,
         use_focal_cleaner: bool = False,
+        autocrop: bool = True,
     ) -> Dict[str, Any]:
         """
-        Runs inference and returns structured predictions.
+        Runs single-sample inference and returns structured predictions.
         """
         if model_name not in self.models:
             raise KeyError(f"Model '{model_name}' is not loaded. Available: {list(self.models.keys())}")
@@ -306,6 +378,7 @@ class ThaiCharacterInferenceEngine:
             target_size=(target_res, target_res),
             pad_ratio=pad_ratio,
             use_focal_cleaner=use_focal_cleaner,
+            autocrop=autocrop,
         )
 
         logits = model(tensor)
@@ -315,13 +388,13 @@ class ThaiCharacterInferenceEngine:
         # Lookup idx to class
         idx_map = self.idx_to_class
         if custom_class_map is not None:
-            idx_map = {int(v): int(k) for k, v in custom_class_map.items()}
+            idx_map = {int(v): (int(k) if str(k).isdigit() else k) for k, v in custom_class_map.items()}
 
         predictions: List[Dict[str, Any]] = []
         for idx in top_k_indices:
             class_num = idx_map.get(int(idx), int(idx))
-            meta = THAI_CHAR_METADATA.get(class_num, {
-                "char": tis620_to_char(class_num),
+            meta = THAI_CHAR_METADATA.get(class_num if isinstance(class_num, int) else -1, {
+                "char": tis620_to_char(class_num) if isinstance(class_num, int) or (isinstance(class_num, str) and class_num.isdigit()) else str(class_num),
                 "name_th": f"รหัส {class_num}",
                 "name_en": f"Class {class_num}",
                 "type": "General",
@@ -358,3 +431,99 @@ class ThaiCharacterInferenceEngine:
             "preprocessed_preview": letterbox_b64,
             "crop_preview": crop_b64,
         }
+
+    @torch.no_grad()
+    def evaluate_loader(
+        self,
+        val_loader: torch.utils.data.DataLoader,
+        model_name: str = "custom_cnn",
+    ) -> Dict[str, Any]:
+        """
+        Evaluates a loaded model across a DataLoader and returns comprehensive metrics.
+        """
+        if model_name not in self.models:
+            raise KeyError(f"Model '{model_name}' is not loaded. Available: {list(self.models.keys())}")
+
+        import time
+        from sklearn.metrics import f1_score, precision_score, recall_score, confusion_matrix, classification_report
+
+        model = self.models[model_name]
+        cfg = self.model_configs.get(model_name, {})
+        target_res = cfg.get("target_res", 32)
+        custom_class_map = cfg.get("custom_class_map")
+
+        idx_map = self.idx_to_class
+        if custom_class_map is not None:
+            idx_map = {int(v): (int(k) if str(k).isdigit() else k) for k, v in custom_class_map.items()}
+
+        all_preds = []
+        all_targets = []
+        all_probs = []
+        top3_correct = 0
+        top5_correct = 0
+        total = 0
+
+        t0 = time.time()
+        for tensors, targets, _ in val_loader:
+            tensors = tensors.to(self.device)
+            if tensors.size(-1) != target_res:
+                tensors = torch.nn.functional.interpolate(tensors, size=(target_res, target_res), mode="bilinear", align_corners=False)
+
+            targets_dev = targets.to(self.device)
+            logits = model(tensors)
+            probs = torch.softmax(logits, dim=-1)
+            preds = logits.argmax(dim=-1)
+
+            all_preds.extend(preds.detach().cpu().numpy())
+            all_targets.extend(targets.numpy())
+            all_probs.extend(probs.detach().cpu().numpy())
+
+            top3 = torch.topk(logits, k=min(3, logits.size(-1)), dim=-1).indices
+            top3_correct += (top3 == targets_dev.unsqueeze(1)).any(dim=-1).sum().item()
+
+            top5 = torch.topk(logits, k=min(5, logits.size(-1)), dim=-1).indices
+            top5_correct += (top5 == targets_dev.unsqueeze(1)).any(dim=-1).sum().item()
+
+            total += targets.size(0)
+
+        elapsed = time.time() - t0
+        all_preds = np.array(all_preds)
+        all_targets = np.array(all_targets)
+        all_probs = np.array(all_probs)
+
+        num_cls = len(idx_map)
+        labels_list = list(range(num_cls))
+        target_names = [tis620_to_char(idx_map[i]) if isinstance(idx_map[i], int) else str(idx_map[i]) for i in labels_list]
+
+        cm = confusion_matrix(all_targets, all_preds, labels=labels_list)
+        top1_acc = float((all_preds == all_targets).mean()) * 100.0
+        top3_acc = float(top3_correct / max(1, total)) * 100.0
+        top5_acc = float(top5_correct / max(1, total)) * 100.0
+        macro_f1 = float(f1_score(all_targets, all_preds, average="macro", zero_division=0)) * 100.0
+        weighted_f1 = float(f1_score(all_targets, all_preds, average="weighted", zero_division=0)) * 100.0
+        macro_prec = float(precision_score(all_targets, all_preds, average="macro", zero_division=0)) * 100.0
+        macro_rec = float(recall_score(all_targets, all_preds, average="macro", zero_division=0)) * 100.0
+
+        throughput = round(total / max(0.001, elapsed), 1)
+
+        return {
+            "model_name": model_name,
+            "model_type": cfg.get("type", "unknown"),
+            "resolution": f"{target_res}x{target_res}",
+            "total_samples": total,
+            "elapsed_seconds": round(elapsed, 2),
+            "throughput_samples_per_sec": throughput,
+            "top1_accuracy": round(top1_acc, 2),
+            "top3_accuracy": round(top3_acc, 2),
+            "top5_accuracy": round(top5_acc, 2),
+            "macro_f1": round(macro_f1, 2),
+            "weighted_f1": round(weighted_f1, 2),
+            "macro_precision": round(macro_prec, 2),
+            "macro_recall": round(macro_rec, 2),
+            "confusion_matrix": cm,
+            "target_names": target_names,
+            "all_preds": all_preds,
+            "all_targets": all_targets,
+            "all_probs": all_probs,
+        }
+

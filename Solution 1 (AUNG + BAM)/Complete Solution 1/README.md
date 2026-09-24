@@ -236,6 +236,12 @@ pip install --upgrade pip
 pip install -r requirements.txt
 ```
 
+### แนะนำใช้วิธีนี้แทน requirement.txt
+```bash
+pip install albumentations==1.4.4 timm pandas scikit-learn tqdm numpy
+
+```
+
 จากนั้นเลือกคำสั่งติดตั้ง PyTorch ให้ตรงกับการ์ดจอของคุณ:
 
 ```bash
@@ -437,23 +443,17 @@ test_image/
 
 ```bash
 # 1. ทำนายภาพทั้งโฟลเดอร์ + เปิด TTA 5 Views (แม่นยำสูงสุดสำหรับส่งตรวจ)
-python -m src.inference \
-    --ckpt outputs/checkpoints/best_model.pth \
-    --input path/to/teacher_test_images/ \
-    --output outputs/predictions.csv \
-    --tta 5
+python -m src.inference --ckpt outputs/checkpoints_finetune/best_model.pth --input test_image/ --output outputs/predictions.csv --tta 5 --device cuda
 
 # 2. ทำนายด่วนภาพเดี่ยว (ข้าม Overhead ของ Multiprocessing)
-python -m src.inference \
-    --ckpt outputs/checkpoints/best_model.pth \
-    --input path/to/sample.png \
-    --num-workers 0
+python -m src.inference --ckpt outputs/checkpoints_finetune/best_model.pth --input path/to/sample.png --num-workers 0
 
 # 3. รันบนเครื่องที่ไม่มีการ์ดจอ (CPU Mode)
-python -m src.inference \
-    --ckpt outputs/checkpoints/best_model.pth \
-    --input path/to/images/ \
-    --device cpu
+python -m src.inference --ckpt outputs/checkpoints_finetune/best_model.pth --input test_image/ --output outputs/predictions.csv --tta 5 --device cpu --num-workers 4
+
+# 4. รันบน MacOS (Apple Silicon)
+python -m src.inference --ckpt outputs/checkpoints_finetune/best_model.pth --input test_image/ --output outputs/predictions.csv --tta 5 --device mps
+```--device cpu
 ```
 
 ### พารามิเตอร์ของ `src/inference.py`

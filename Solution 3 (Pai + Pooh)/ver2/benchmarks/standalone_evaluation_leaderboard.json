@@ -1,0 +1,24 @@
+[
+  {
+    "Model Name": "Solution 3 (ResNet-18 ver2)",
+    "Architecture": "resnet18",
+    "Resolution": "64x64",
+    "Top-1 Acc (%)": 93.77,
+    "Top-3 Acc (%)": 98.84,
+    "Macro-F1 (%)": 92.5,
+    "Weighted-F1 (%)": 93.73,
+    "Throughput (s/s)": 1462.9,
+    "Latency (ms)": 0.68
+  },
+  {
+    "Model Name": "Solution 3 (CustomGlyphCNN ver1)",
+    "Architecture": "custom_cnn",
+    "Resolution": "32x32",
+    "Top-1 Acc (%)": 4.97,
+    "Top-3 Acc (%)": 18.95,
+    "Macro-F1 (%)": 3.78,
+    "Weighted-F1 (%)": 3.91,
+    "Throughput (s/s)": 1755.8,
+    "Latency (ms)": 0.57
+  }
+]

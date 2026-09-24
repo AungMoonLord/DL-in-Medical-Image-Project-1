@@ -244,6 +244,8 @@ def build_model(
     num_classes: int = 72,
     pretrained: bool = False,
     dropout_rate: float = 0.3,
+    adapt_stem: bool = True,
+    **kwargs,
 ) -> nn.Module:
     """
     Factory function for instantiating neural network architectures.
@@ -252,7 +254,7 @@ def build_model(
     if name in ("custom_cnn", "customglyphcnn", "glyph_cnn"):
         return CustomGlyphCNN(num_classes=num_classes, dropout_rate=dropout_rate)
     elif name in ("resnet18", "resnet_18", "adapted_resnet18"):
-        return AdaptedResNet18(num_classes=num_classes, pretrained=pretrained, dropout_rate=dropout_rate)
+        return AdaptedResNet18(num_classes=num_classes, pretrained=pretrained, adapt_stem=adapt_stem, dropout_rate=dropout_rate)
     elif name in ("mobilenet_v3", "mobilenetv3", "adapted_mobilenet"):
         return AdaptedMobileNetV3(num_classes=num_classes, pretrained=pretrained, dropout_rate=dropout_rate)
     elif name in ("efficientnet_b0", "efficientnet", "effnet_b0", "solution2"):
