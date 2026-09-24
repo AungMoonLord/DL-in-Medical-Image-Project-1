@@ -148,15 +148,24 @@ class ThaiCharacterPredictor:
 
         batch_results = []
         for image_path in image_paths:
-            predictions = self.predict_image(image_path, top_k=top_k)
-            best = predictions[0]
+            try:
+                predictions = self.predict_image(image_path, top_k=top_k)
+                best = predictions[0]
 
-            batch_results.append({
-                "file_path": str(image_path),
-                "predicted_class": best["class_id"],
-                "predicted_char": best["thai_char"],
-                "confidence": best["confidence"],
-            })
+                batch_results.append({
+                    "file_path": str(image_path),
+                    "predicted_class": best["class_id"],
+                    "predicted_char": best["thai_char"],
+                    "confidence": best["confidence"],
+                })
+            except Exception as e:
+                print(f"[Warning] ข้ามไฟล์ภาพเสีย ({image_path.name}): {e}", file=sys.stderr)
+                batch_results.append({
+                    "file_path": str(image_path),
+                    "predicted_class": "101",  # กำหนด Fallback Class พื้นฐานไว้
+                    "predicted_char": "ก",
+                    "confidence": 0.0,
+                })
 
         df = pd.DataFrame(batch_results)
 

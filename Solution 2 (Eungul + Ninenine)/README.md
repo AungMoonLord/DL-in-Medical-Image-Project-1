@@ -96,32 +96,72 @@ flowchart TD
 
 ```text
 Solution 2 (Eungul + Ninenine)/
-├── best_thai_character_finetuned.pth  # Checkpoint หลักที่ดีที่สุด (16.7 MB)
+├── best_thai_character_finetuned.pth  # Checkpoint หลักที่ดีที่สุด (16.7 MB, Acc: 91.43%)
 ├── best_thai_character_model_v2.pth   # Checkpoint ฐาน (16.7 MB)
 ├── inference.py                       # [Main Entry Point] สคริปต์ทำนายผลภาพ (เดี่ยว / โฟลเดอร์)
 ├── train.py                           # [Main Entry Point] สคริปต์เทรนและ Fine-tune โมเดล
+├── run_pipeline.py                    # [Automation] สคริปต์ไปป์ไลน์อัตโนมัติ (ตรวจ GPU, แตก Zip, เทรน)
+├── run_training.bat                   # [One-Click Runner] ดับเบิ้ลคลิกเพื่อรันเทรนบน Windows
 ├── requirements.txt                   # รายการไลบรารีที่จำเป็น
 ├── README.md                          # เอกสารสรุปโปรเจกต์และคู่มือการใช้งาน
+├── data/                              # โฟลเดอร์สำหรับวางชุดข้อมูลภาพดิบ 72 คลาส
+│   └── .gitkeep                       # รักษาโครงสร้างไดเรกทอรีใน Git
 ├── .vscode/                           # การตั้งค่า VS Code Workspace
-└── src/                               # ซอร์สโค้ดและโมดูลระบบ
+└── src/                               # ซอร์สโค้ดและโมดูลระบบ (ครบทั้ง 9 โมดูล)
     ├── __init__.py                    # กำหนด Package
-    ├── config.py                      # ไฮเปอร์พารามิเตอร์, พาธ, และพจนานุกรมถอดรหัส TIS-620
+    ├── config.py                      # ไฮเปอร์พารามิเตอร์, พาธ, และพจนานุกรมถอดรหัส TIS-620 / Class ID 3 หลัก
     ├── dataset.py                     # สแกนข้อมูล, Stratified Split, และ Offline Train Augmentation
-    ├── predictor.py                   # คลาส ThaiCharacterPredictor และ Batch Processor
+    ├── predictor.py                   # คลาส ThaiCharacterPredictor, Batch Processor, Natural Sort
     ├── losses.py                      # คำนวณ Class Weights และ Loss Function
     ├── metrics.py                     # คำนวณ Accuracy, Macro-F1, Top-k, Confusion Matrix
     ├── models.py                      # นิยามโมเดล EfficientNet-B0 และฟังก์ชันโหลด Checkpoint
     ├── trainer.py                     # ลูปการฝึกสอน 2-Stage, AMP, และการบันทึกประวัติ
-    └── transforms.py                  # Pipeline การแปลงภาพ (PadToSquare, Normalize)
+    └── transforms.py                  # Pipeline การแปลงภาพ (PadToSquare 255, Normalize)
 ```
 
 ---
 
-## 🚀 คู่มือการใช้งานผ่าน Terminal (CLI Usage)
+##  การติดตั้งสภาพแวดล้อม (Installation & Setup)
+
+ติดตั้งไลบรารีที่จำเป็นทั้งหมดในคำสั่งเดียวผ่าน Terminal:
+```bash
+pip install -r requirements.txt
+```
+
+---
+
+## 🏆 คู่มือการสอบแข่งขันและส่งผลทำนายจริง (30-Minute Competition Guide)
+
+ขั้นตอนการปฏิบัติในวันสอบจริง สำหรับทำนายชุดภาพทดสอบ 500 ภาพ และส่งผลเข้า Google Sheet ช่อง **"กลุ่ม 2"**:
+
+### ขั้นตอนที่ 1: การจัดวางโฟลเดอร์ข้อสอบ 500 ภาพ
+- **ทางเลือก A (แนะนำ)**: นำโฟลเดอร์ภาพข้อสอบมาวางไว้ในโฟลเดอร์โปรเจกต์ เช่น ตั้งชื่อว่า `test_dataset/`
+- **ทางเลือก B**: สามารถชี้พาธไปยังตำแหน่งใดก็ได้ในเครื่องคอมพิวเตอร์ (เช่น `"D:/Exam/test_500"`)
+
+### ขั้นตอนที่ 2: รันคำสั่งทำนายผลแบบชุด (Batch Inference)
+รันคำสั่งเพียงบรรทัดเดียวจากโฟลเดอร์โปรเจกต์:
+```bash
+python inference.py --folder "test_dataset" --output-csv "predictions.csv"
+```
+> [!TIP]
+> ระบบมีอัลกอริทึม **Natural Numerical Sort** ในตัว (`natural_sort_key`) จะทำการสแกนภาพและจัดเรียงไฟล์ตั้งแต่ `ts_img_1.png` ถึง `ts_img_500.png` ตามลำดับค่าตัวเลขจริง การันตีว่าแถวที่ได้ในไฟล์ CSV จะตรงกับแถวที่ 1 ถึง 500 บน Google Sheet 100% (ไม่มีปัญหาแถวสลับหรือเลื่อน) พร้อมระบบดักจับภาพเสียอัตโนมัติ
+
+### ขั้นตอนที่ 3: การส่งผลคะแนนเข้า Google Sheet ช่อง "กลุ่ม 2"
+1. เปิดไฟล์ `predictions.csv` ที่สร้างขึ้นด้วยโปรแกรมตารางคำนวณ (เช่น Microsoft Excel, Google Sheets, หรือ VS Code)
+2. คอลัมน์ **`predicted_class`** จะบรรจุรหัส 3 หลักของอาจารย์ไว้เรียบร้อยแล้ว:
+   - **พยัญชนะไทย (41 ตัว)**: `101` – `141`
+   - **สระและเครื่องหมาย (21 ตัว)**: `201` – `221`
+   - **ตัวเลขไทย (10 ตัว)**: `301` – `310`
+3. ลากคลุมคัดลอก (Copy) ค่าในคอลัมน์ `predicted_class` ทั้ง 500 แถว
+4. นำไปวาง (Paste) ลงในคอลัมน์ **"กลุ่ม 2"** บน Google Sheet ได้ทันทีภายใน 5 วินาที
+
+---
+
+## 🚀 คู่มือการใช้งานคำสั่งผ่าน Terminal (CLI Usage)
 
 ทุกคำสั่งสามารถรันได้โดยตรงจากโฟลเดอร์โปรเจกต์ `Solution 2 (Eungul + Ninenine)`:
 
-### 1. การทำนายผล (Inference) ในวันสอบและตรวจงานจริง (`inference.py`)
+### 1. การทำนายผล (Inference)
 
 ระบบรองรับทั้งการทำนายภาพเดี่ยวและการทำนายทั้งโฟลเดอร์ พร้อมเลือกไฟล์ Checkpoint อัตโนมัติ (`best_thai_character_finetuned.pth` $\to$ `best_thai_character_model_v2.pth`):
 
@@ -135,21 +175,21 @@ python inference.py --image "path/to/image.png" --top-k 3
 [*] กำลังโหลด Checkpoint จาก: best_thai_character_finetuned.pth
 [*] โหลดโมเดลสำเร็จ! จำนวนคลาส: 72 | Validation Macro-F1: 0.8990
 
-============================================================
+=================================================================
  ผลการทำนาย: sample_ko_kai.png
-============================================================
- อันดับ   ตัวอักษรไทย     รหัส TIS-620       ค่า Confidence (%)
-------------------------------------------------------------
- #1     ก              161 (0xA1)         99.45%         
- #2     ถ              182 (0xB6)         0.32%          
- #3     ภ              192 (0xC0)         0.11%          
-============================================================
+=================================================================
+ อันดับ   Class ID     ตัวอักษรไทย    Folder       Confidence (%)
+-----------------------------------------------------------------
+ #1     101          ก              161          99.45%         
+ #2     118          ถ              182          0.32%          
+ #3     128          ภ              192          0.11%          
+=================================================================
 ```
 
 #### 1.2 ทำนายภาพทั้งโฟลเดอร์ (Batch Folder Prediction):
-รองรับการสแกนหาไฟล์ภาพในโฟลเดอร์และโฟลเดอร์ย่อยแบบ Recursive พร้อมส่งออกผลการทำนายเป็นตาราง CSV:
+รองรับการสแกนหาไฟล์ภาพในโฟลเดอร์และโฟลเดอร์ย่อยแบบ Recursive พร้อมจัดเรียงแบบ Natural Sort และส่งออกผลการทำนายเป็นตาราง CSV:
 ```bash
-python inference.py --folder "path/to/images_dir" --output-csv "predictions.csv" --top-k 3
+python inference.py --folder "path/to/images_dir" --output-csv "predictions.csv"
 ```
 
 #### 1.3 พารามิเตอร์ทั้งหมดของ `inference.py`:
@@ -166,14 +206,26 @@ python inference.py --folder "path/to/images_dir" --output-csv "predictions.csv"
 
 ---
 
-### 2. การเทรนและ Fine-tuning โมเดล (`train.py`)
+### 2. การเทรนและ Fine-tuning โมเดล (`train.py` & Automation)
 
-#### 2.1 Fine-tuning ต่อยอดจาก Checkpoint ฐาน (35 Epochs):
+#### 2.1 One-Click Automated Training (แนะนำสำหรับ Windows):
+ดับเบิ้ลคลิกไฟล์ `run_training.bat` หรือรันผ่าน Terminal:
+```bash
+python run_pipeline.py
+```
+> [!NOTE]
+> สคริปต์จะทำการ:
+> 1. ตรวจสอบฮาร์ดแวร์ GPU / CUDA และ VRAM อัตโนมัติ (หรือสลับไปใช้ CPU หากไม่มี GPU)
+> 2. ตรวจหาและแตกไฟล์ Zip ชุดข้อมูลอัตโนมัติ (`./data`, `Cleaned_data.zip`, `D:/ThaiCharacter Dataset v2`, ฯลฯ)
+> 3. สั่ง Fine-tune โมเดล 35 Epochs ต่อยอดจาก `best_thai_character_model_v2.pth` ทันที
+> 4. แสดงสรุปผลตัวชี้วัด Accuracy (91.43%) และ Macro-F1 (0.8990)
+
+#### 2.2 Fine-tuning ต่อยอดจาก Checkpoint ฐานผ่าน CLI:
 ```bash
 python train.py --finetune-only --base-checkpoint "best_thai_character_model_v2.pth" --data-dir "./data"
 ```
 
-#### 2.2 Full 2-Stage Training ตั้งแต่เริ่มต้น:
+#### 2.3 Full 2-Stage Training ตั้งแต่เริ่มต้น:
 ```bash
 python train.py --data-dir "./data" --batch-size 256 --stage1-epochs 5 --stage2-epochs 35
 ```
@@ -182,4 +234,5 @@ python train.py --data-dir "./data" --batch-size 256 --stage1-epochs 5 --stage2-
 
 ### 3. การจัดวางโฟลเดอร์ Dataset สำหรับการฝึกสอน (Data Placement)
 หากต้องการรันคำสั่งฝึกสอนโมเดลใหม่ (`train.py`) ให้นำโฟลเดอร์ภาพดิบ 72 คลาส (โฟลเดอร์รหัส 161 ถึง 249) มาวางไว้ที่โฟลเดอร์ `data/` หรือระบุผ่าน `--data-dir "path/to/dataset"`
+
 
