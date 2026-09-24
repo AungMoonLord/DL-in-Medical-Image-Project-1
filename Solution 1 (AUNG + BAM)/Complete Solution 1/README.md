@@ -443,16 +443,16 @@ test_image/
 
 ```bash
 # 1. ทำนายภาพทั้งโฟลเดอร์ + เปิด TTA 5 Views (แม่นยำสูงสุดสำหรับส่งตรวจ)
-py -m src.inference --ckpt outputs/checkpoints_finetune/best_model.pth --input test_image/ --output outputs/predictions.csv --tta 5 --device cuda
+python -m src.inference --ckpt outputs/checkpoints_finetune/best_model.pth --input test_image/ --output outputs/predictions.csv --tta 5 --device cuda
 
 # 2. ทำนายด่วนภาพเดี่ยว (ข้าม Overhead ของ Multiprocessing)
 python -m src.inference --ckpt outputs/checkpoints_finetune/best_model.pth --input path/to/sample.png --num-workers 0
 
 # 3. รันบนเครื่องที่ไม่มีการ์ดจอ (CPU Mode)
-py -m src.inference --ckpt outputs/checkpoints_finetune/best_model.pth --input test_image/ --output outputs/predictions.csv --tta 5 --device cpu
+python -m src.inference --ckpt outputs/checkpoints_finetune/best_model.pth --input test_image/ --output outputs/predictions.csv --tta 5 --device cpu --num-workers 4
 
 # 4. รันบน MacOS (Apple Silicon)
-py -m src.inference --ckpt outputs/checkpoints_finetune/best_model.pth --input test_image/ --output outputs/predictions.csv --tta 5 --device mps
+python -m src.inference --ckpt outputs/checkpoints_finetune/best_model.pth --input test_image/ --output outputs/predictions.csv --tta 5 --device mps
 ```--device cpu
 ```
 
