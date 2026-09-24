@@ -238,7 +238,7 @@ pip install -r requirements.txt
 
 ### แนะนำใช้วิธีนี้แทน requirement.txt
 ```bash
-pip install albumentations timm pandas scikit-learn tqdm numpy
+pip install albumentations==1.4.4 timm pandas scikit-learn tqdm numpy
 
 ```
 
