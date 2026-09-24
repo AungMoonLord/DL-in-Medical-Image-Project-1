@@ -179,3 +179,7 @@ python train.py --data-dir "./data" --batch-size 256 --stage1-epochs 5 --stage2-
 ```
 
 ---
+
+### 3. การจัดวางโฟลเดอร์ Dataset สำหรับการฝึกสอน (Data Placement)
+หากต้องการรันคำสั่งฝึกสอนโมเดลใหม่ (`train.py`) ให้นำโฟลเดอร์ภาพดิบ 72 คลาส (โฟลเดอร์รหัส 161 ถึง 249) มาวางไว้ที่โฟลเดอร์ `data/` หรือระบุผ่าน `--data-dir "path/to/dataset"`
+
