@@ -43,8 +43,9 @@ def resolve_checkpoint_path(custom_path: Optional[Union[str, Path]] = None) -> P
     """
     if custom_path is not None:
         p = Path(custom_path)
-        if p.exists():
-            return p
+        if not p.exists():
+            raise FileNotFoundError(f"ไม่พบไฟล์ Checkpoint ตามที่ระบุ: {p.resolve()}")
+        return p
 
     for candidate in FALLBACK_CHECKPOINT_PATHS:
         if candidate.exists():

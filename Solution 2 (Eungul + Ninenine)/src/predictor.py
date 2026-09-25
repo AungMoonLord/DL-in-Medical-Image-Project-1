@@ -6,10 +6,10 @@ Maps numeric folder IDs to readable Thai characters and TIS-620 codes.
 
 Usage from Terminal:
     # Single image:
-    python -m src.inference --image "path/to/image.png" --top-k 3
+    python inference.py --image "path/to/image.png" --top-k 3
 
     # Batch folder:
-    python -m src.inference --folder "path/to/folder" --output-csv "predictions.csv"
+    python inference.py --folder "path/to/folder" --output-csv "predictions.csv"
 """
 
 import argparse
@@ -28,13 +28,9 @@ from PIL import Image
 import torch
 
 from src.config import (
-    DEFAULT_CHECKPOINT_PATH,
     DEVICE,
-    FOLDER_TO_CLASS_ID,
     VALID_EXTENSIONS,
-    folder_to_char,
     folder_to_info,
-    folder_to_tis620_code,
     resolve_checkpoint_path,
 )
 from src.models import load_model_from_checkpoint
